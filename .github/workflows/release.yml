@@ -52,13 +52,13 @@ jobs:
           go build -ldflags="-s -w" -o "${BINARY_NAME}"
 
           # Create tarball (except for Windows)
-          if [ "${{ matrix.os }}" != "windows" ]; then
-            tar czf "${BINARY_NAME}.tar.gz" "${BINARY_NAME}"
-            echo "ASSET=${BINARY_NAME}.tar.gz" >> $GITHUB_ENV
-          else
-            zip "${BINARY_NAME}.zip" "${BINARY_NAME}"
-            echo "ASSET=${BINARY_NAME}.zip" >> $GITHUB_ENV
-          fi
+          # if [ "${{ matrix.os }}" != "windows" ]; then
+          #   tar czf "${BINARY_NAME}.tar.gz" "${BINARY_NAME}"
+          #   echo "ASSET=${BINARY_NAME}.tar.gz" >> $GITHUB_ENV
+          # else
+          #   zip "${BINARY_NAME}.zip" "${BINARY_NAME}"
+          #   echo "ASSET=${BINARY_NAME}.zip" >> $GITHUB_ENV
+          # fi
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -96,22 +96,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  homebrew:
-    name: Update Homebrew Formula
-    needs: publish
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - name: Extract version
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-      - name: Homebrew bump formula
-        uses: mislav/bump-homebrew-formula-action@v3
-        if: "!contains(github.ref, '-')" # Skip pre-releases
-        with:
-          formula-name: howtfdoi
-          homebrew-tap: NeckBeardPrince/homebrew-tap
-          download-url: https://github.com/${{ github.repository }}/archive/${{ github.ref_name }}.tar.gz
-        env:
-          COMMITTER_TOKEN: ${{ secrets.COMMITTER_TOKEN }}
+  # homebrew:
+  #   name: Update Homebrew Formula
+  #   needs: publish
+  #   runs-on: ubuntu-latest
+  #   if: startsWith(github.ref, 'refs/tags/v')
+  #   steps:
+  #     - name: Extract version
+  #       id: version
+  #       run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+  #
+  #     - name: Homebrew bump formula
+  #       uses: mislav/bump-homebrew-formula-action@v3
+  #       if: "!contains(github.ref, '-')" # Skip pre-releases
+  #       with:
+  #         formula-name: howtfdoi
+  #         homebrew-tap: NeckBeardPrince/homebrew-tap
+  #         download-url: https://github.com/${{ github.repository }}/archive/${{ github.ref_name }}.tar.gz
+  #       env:
+  #         COMMITTER_TOKEN: ${{ secrets.COMMITTER_TOKEN }}
