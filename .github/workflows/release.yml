@@ -84,7 +84,7 @@ jobs:
         if: "!contains(github.ref, '-')" # Skip pre-releases
         with:
           formula-name: howtfdoi
-          homebrew-tap: yourusername/homebrew-tap
+          homebrew-tap: NeckBeardPrince/homebrew-tap
           download-url: https://github.com/${{ github.repository }}/archive/${{ github.ref_name }}.tar.gz
         env:
           COMMITTER_TOKEN: ${{ secrets.COMMITTER_TOKEN }}
