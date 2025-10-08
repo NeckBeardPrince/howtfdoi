@@ -27,7 +27,7 @@ go build -o howtfdoi
 go install
 
 # Or install directly
-go install github.com/yourusername/howtfdoi@latest
+go install github.com/neckbeardprince/howtfdoi@latest
 ```
 
 ## Setup

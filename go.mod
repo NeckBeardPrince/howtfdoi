@@ -1,4 +1,4 @@
-module howtfdoi
+module github.com/neckbeardprince/howtfdoi
 
 go 1.25.2
 
