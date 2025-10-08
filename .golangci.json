@@ -1,0 +1,75 @@
+{
+  "formatters": {
+    "enable": [
+      "gofmt",
+      "goimports"
+    ],
+    "exclusions": {
+      "generated": "lax",
+      "paths": [
+        "third_party$",
+        "builtin$",
+        "examples$"
+      ]
+    }
+  },
+  "linters": {
+    "enable": [
+      "bodyclose",
+      "gosec",
+      "misspell",
+      "revive",
+      "unconvert",
+      "unparam"
+    ],
+    "exclusions": {
+      "generated": "lax",
+      "paths": [
+        "third_party$",
+        "builtin$",
+        "examples$"
+      ],
+      "presets": [
+        "comments",
+        "common-false-positives",
+        "legacy",
+        "std-error-handling"
+      ],
+      "rules": [
+        {
+          "linters": [
+            "errcheck",
+            "gosec"
+          ],
+          "path": "_test\\.go"
+        }
+      ]
+    },
+    "settings": {
+      "errcheck": {
+        "check-blank": true,
+        "check-type-assertions": true
+      },
+      "gosec": {
+        "excludes": [
+          "G304"
+        ]
+      },
+      "govet": {
+        "enable-all": true
+      },
+      "revive": {
+        "rules": [
+          {
+            "disabled": true,
+            "name": "exported"
+          }
+        ]
+      }
+    }
+  },
+  "run": {
+    "tests": true
+  },
+  "version": "2"
+}

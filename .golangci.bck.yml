@@ -1,0 +1,45 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck      # Check for unchecked errors
+    - gosimple      # Simplify code
+    - govet         # Go vet
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Static analysis
+    - unused        # Check for unused code
+    - gofmt         # Check formatting
+    - goimports     # Check imports
+    - misspell      # Check for misspelled words
+    - revive        # General linter
+    - gosec         # Security checks
+    - unconvert     # Remove unnecessary conversions
+    - unparam       # Check for unused function parameters
+    - bodyclose     # Check for unclosed HTTP response bodies
+
+linters-settings:
+  errcheck:
+    check-blank: true
+    check-type-assertions: true
+
+  govet:
+    enable-all: true
+
+  revive:
+    rules:
+      - name: exported
+        disabled: true  # Allow unexported functions in main package
+
+  gosec:
+    excludes:
+      - G304  # Allow variable file paths in this CLI tool
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
