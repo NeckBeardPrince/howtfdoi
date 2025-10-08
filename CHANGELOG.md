@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Support for Claude AI (Haiku model) via Anthropic API
 - Initial release of howtfdoi CLI tool
 - Natural language command-line queries powered by Claude AI (Haiku model)
 - Real-time streaming responses for instant answers
