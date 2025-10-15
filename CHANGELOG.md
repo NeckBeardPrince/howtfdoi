@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 1.0.2 - 2025-10-15
+## [1.0.3] - 2025-10-15
+
+### Added
+
+- Version output with `-v` and `--version` flags
+- Repository URL displayed in version output for easy access to downloads and documentation
+
+## [1.0.2] - 2025-10-15
 
 ### Added
 
@@ -56,5 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confirmation prompts before command execution
 - API key validation on startup
 
-[unreleased]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.0...HEAD
+[unreleased]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/NeckBeardPrince/howtfdoi/releases/tag/v1.0.0

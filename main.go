@@ -20,6 +20,13 @@ import (
 	"github.com/fatih/color"
 )
 
+var (
+	// version is set at build time via -ldflags
+	version = "dev"
+	// repository URL for documentation and downloads
+	repository = "https://github.com/NeckBeardPrince/howtfdoi"
+)
+
 // Dangerous command patterns
 var dangerousPatterns = []string{
 	`rm\s+-rf\s+/`,
@@ -47,10 +54,19 @@ type Response struct {
 
 func main() {
 	// Parse flags
+	versionFlag := flag.Bool("version", false, "Show version information")
+	versionShortFlag := flag.Bool("v", false, "Show version information")
 	copyFlag := flag.Bool("c", false, "Copy command to clipboard")
 	executeFlag := flag.Bool("x", false, "Execute the command directly")
 	examplesFlag := flag.Bool("e", false, "Show multiple examples")
 	flag.Parse()
+
+	// Handle version flag
+	if *versionFlag || *versionShortFlag {
+		fmt.Printf("howtfdoi version %s\n", version)
+		fmt.Printf("Download and documentation: %s\n", repository)
+		os.Exit(0)
+	}
 
 	// Setup config
 	config := setupConfig()
