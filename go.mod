@@ -3,7 +3,7 @@ module github.com/neckbeardprince/howtfdoi
 go 1.25.2
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.13.0
+	github.com/anthropics/anthropic-sdk-go v1.14.0
 	github.com/atotto/clipboard v0.1.4
 	github.com/chzyer/readline v1.5.1
 	github.com/fatih/color v1.18.0
