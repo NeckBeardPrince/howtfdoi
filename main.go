@@ -135,7 +135,7 @@ func runQuery(config Config, query string, showExamples bool) (*Response, error)
 
 	// Stream the response for speed
 	stream := client.Messages.NewStreaming(context.Background(), anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaude3_5HaikuLatest,
+		Model:     anthropic.ModelClaudeHaiku4_5,
 		MaxTokens: 1024,
 		System: []anthropic.TextBlockParam{
 			{
@@ -182,6 +182,7 @@ func buildSystemPrompt(platform string, showExamples bool) string {
 		return `You are a command-line expert assistant. Provide multiple practical examples for the requested command or tool.
 
 Rules:
+- Output in plain text only, as this output may be copied directly to a terminal
 - Show 3-5 different use cases
 - Each example should have the command and a brief explanation
 - Focus on common, practical scenarios
@@ -201,6 +202,7 @@ tar -tzf archive.tar.gz
 	return fmt.Sprintf(`You are a command-line expert assistant for %s systems. Provide concise, accurate answers about CLI tools and commands.
 
 Rules:
+- Output in plain text only, as this output may be copied directly to a terminal
 - Give the command/answer directly and immediately
 - Be extremely concise - no unnecessary explanation unless the command is complex
 - Show the actual command first, then a brief one-line explanation if needed
