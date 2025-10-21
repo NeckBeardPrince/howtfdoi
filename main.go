@@ -20,6 +20,19 @@ import (
 	"github.com/fatih/color"
 )
 
+const (
+	// Model configuration
+	claudeModel = anthropic.ModelClaudeHaiku4_5
+	maxTokens   = 1024
+
+	// UI thresholds
+	aliasLengthThreshold = 40
+	aliasPipeThreshold   = 1
+
+	// History file name
+	historyFileName = ".howtfdoi_history"
+)
+
 var (
 	// version is set at build time via -ldflags
 	version = "dev"
@@ -27,15 +40,15 @@ var (
 	repository = "https://github.com/NeckBeardPrince/howtfdoi"
 )
 
-// Dangerous command patterns
-var dangerousPatterns = []string{
-	`rm\s+-rf\s+/`,
-	`rm\s+-rf\s+\*`,
-	`dd\s+.*of=/dev/`,
-	`mkfs\.`,
-	`:(){ :|:& };:`,
-	`>\s*/dev/sd`,
-	`mv\s+.*\s+/dev/null`,
+// Dangerous command patterns (compiled once at startup)
+var dangerousPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`rm\s+-rf\s+/`),
+	regexp.MustCompile(`rm\s+-rf\s+\*`),
+	regexp.MustCompile(`dd\s+.*of=/dev/`),
+	regexp.MustCompile(`mkfs\.`),
+	regexp.MustCompile(`:(){ :|:& };:`),
+	regexp.MustCompile(`>\s*/dev/sd`),
+	regexp.MustCompile(`mv\s+.*\s+/dev/null`),
 }
 
 // Config holds runtime configuration
@@ -50,6 +63,12 @@ type Response struct {
 	Command     string
 	Explanation string
 	FullText    string
+}
+
+// ResponseOptions holds options for processing responses
+type ResponseOptions struct {
+	CopyToClipboard bool
+	Execute         bool
 }
 
 func main() {
@@ -95,41 +114,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Display the response with colors
-	displayResponse(response)
-
-	// Check for dangerous commands
-	if isDangerous(response.Command) {
-		color.Yellow("\n⚠️  WARNING: This command may be dangerous!")
-		color.Yellow("Please review carefully before executing.")
+	// Handle the response
+	opts := ResponseOptions{
+		CopyToClipboard: *copyFlag,
+		Execute:         *executeFlag,
 	}
-
-	// Save to history
-	saveToHistory(config, query, response.FullText)
-
-	// Copy to clipboard if requested
-	if *copyFlag && response.Command != "" {
-		if err := clipboard.WriteAll(response.Command); err == nil {
-			color.Cyan("\n📋 Command copied to clipboard!")
-		}
-	}
-
-	// Execute if requested
-	if *executeFlag && response.Command != "" {
-		executeCommand(response.Command)
-	}
-
-	// Suggest alias for complex commands
-	if shouldSuggestAlias(response.Command) {
-		suggestAlias(query, response.Command)
-	}
+	handleResponse(config, query, response, opts)
 }
 
 func setupConfig() Config {
-	homeDir, _ := os.UserHomeDir()
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback to current directory if home directory is unavailable
+		homeDir = "."
+	}
 	return Config{
 		APIKey:      os.Getenv("ANTHROPIC_API_KEY"),
-		HistoryFile: filepath.Join(homeDir, ".howtfdoi_history"),
+		HistoryFile: filepath.Join(homeDir, historyFileName),
 		Platform:    runtime.GOOS,
 	}
 }
@@ -151,8 +152,8 @@ func runQuery(config Config, query string, showExamples bool) (*Response, error)
 
 	// Stream the response for speed
 	stream := client.Messages.NewStreaming(context.Background(), anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaudeHaiku4_5,
-		MaxTokens: 1024,
+		Model:     claudeModel,
+		MaxTokens: maxTokens,
 		System: []anthropic.TextBlockParam{
 			{
 				Type: "text",
@@ -278,10 +279,41 @@ func displayResponse(response *Response) {
 	}
 }
 
+// handleResponse processes a response with all requested options
+func handleResponse(config Config, query string, response *Response, opts ResponseOptions) {
+	// Display the response
+	displayResponse(response)
+
+	// Check for dangerous commands
+	if isDangerous(response.Command) {
+		color.Yellow("\n⚠️  WARNING: This command may be dangerous!")
+		color.Yellow("Please review carefully before executing.")
+	}
+
+	// Save to history
+	saveToHistory(config, query, response.FullText)
+
+	// Copy to clipboard if requested
+	if opts.CopyToClipboard && response.Command != "" {
+		if err := clipboard.WriteAll(response.Command); err == nil {
+			color.Cyan("\n📋 Command copied to clipboard!")
+		}
+	}
+
+	// Execute if requested
+	if opts.Execute && response.Command != "" {
+		executeCommand(response.Command)
+	}
+
+	// Suggest alias for complex commands
+	if shouldSuggestAlias(response.Command) {
+		suggestAlias(query, response.Command)
+	}
+}
+
 func isDangerous(command string) bool {
 	for _, pattern := range dangerousPatterns {
-		matched, _ := regexp.MatchString(pattern, command)
-		if matched {
+		if pattern.MatchString(command) {
 			return true
 		}
 	}
@@ -291,13 +323,17 @@ func isDangerous(command string) bool {
 func saveToHistory(config Config, query, response string) {
 	f, err := os.OpenFile(config.HistoryFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
+		// Silently fail - history is not critical
 		return
 	}
 	defer f.Close()
 
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	entry := fmt.Sprintf("[%s] %s\n%s\n---\n", timestamp, query, response)
-	f.WriteString(entry)
+	if _, err := f.WriteString(entry); err != nil {
+		// Silently fail - history is not critical
+		return
+	}
 }
 
 func executeCommand(command string) {
@@ -326,8 +362,8 @@ func executeCommand(command string) {
 }
 
 func shouldSuggestAlias(command string) bool {
-	// Suggest alias for commands longer than 40 chars or with complex pipes
-	return len(command) > 40 || strings.Count(command, "|") > 1
+	// Suggest alias for commands longer than threshold or with complex pipes
+	return len(command) > aliasLengthThreshold || strings.Count(command, "|") > aliasPipeThreshold
 }
 
 func suggestAlias(query, command string) {
@@ -416,30 +452,13 @@ func runInteractiveMode(config Config) {
 			continue
 		}
 
-		// Display the response
+		// Handle the response
 		fmt.Println()
-		displayResponse(response)
-
-		// Check for dangerous commands
-		if isDangerous(response.Command) {
-			color.Yellow("\n⚠️  WARNING: This command may be dangerous!")
+		opts := ResponseOptions{
+			CopyToClipboard: copyFlag,
+			Execute:         executeFlag,
 		}
-
-		// Save to history
-		saveToHistory(config, query, response.FullText)
-
-		// Copy to clipboard if requested
-		if copyFlag && response.Command != "" {
-			if err := clipboard.WriteAll(response.Command); err == nil {
-				color.Cyan("📋 Copied to clipboard!")
-			}
-		}
-
-		// Execute if requested
-		if executeFlag && response.Command != "" {
-			executeCommand(response.Command)
-		}
-
+		handleResponse(config, query, response, opts)
 		fmt.Println()
 	}
 }
