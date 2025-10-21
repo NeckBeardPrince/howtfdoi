@@ -1,11 +1,14 @@
 # howtfdoi
 
-**Instant coding answers via the command line** - powered by Claude
+**Instant coding answers via the command line** - powered by AI
 
 Forget scrolling through Stack Overflow or man pages. Just ask.
 
+Ask CLI questions in plain English and get instant answers powered by Claude or ChatGPT.
+
 ## Features
 
+- 🤖 **Multiple AI providers** - Choose between Claude (Anthropic) or ChatGPT (OpenAI)
 - 🎨 **Color-coded output** - Commands in green, explanations in gray
 - 📋 **Copy to clipboard** - One flag to copy commands instantly
 - ⚡ **Direct execution** - Run commands with confirmation
@@ -33,13 +36,43 @@ go install github.com/neckbeardprince/howtfdoi@latest
 
 ## Setup
 
-Set your Anthropic API key:
+Choose your AI provider and set the corresponding API key:
+
+### Option 1: Claude (Anthropic) - Default
 
 ```bash
 export ANTHROPIC_API_KEY='your-api-key-here'
 ```
 
 Get your API key from: <https://console.anthropic.com/>
+
+### Option 2: ChatGPT (OpenAI)
+
+```bash
+export OPENAI_API_KEY='your-api-key-here'
+```
+
+Get your API key from: <https://platform.openai.com/>
+
+### Choosing a Provider
+
+By default, `howtfdoi` uses Claude (Anthropic). To use OpenAI/ChatGPT instead:
+
+```bash
+# Set the provider explicitly
+export HOWTFDOI_AI_PROVIDER=openai
+
+# Or use it inline
+HOWTFDOI_AI_PROVIDER=openai howtfdoi list files
+
+# "chatgpt" is an alias for "openai"
+HOWTFDOI_AI_PROVIDER=chatgpt howtfdoi list files
+```
+
+If you don't set `HOWTFDOI_AI_PROVIDER`, the tool will:
+1. Use Anthropic if `ANTHROPIC_API_KEY` is set
+2. Fall back to OpenAI if only `OPENAI_API_KEY` is set
+3. Use OpenAI if both keys are set but you specify the provider
 
 ## Usage
 
@@ -223,7 +256,8 @@ howtfdoi test network connection
 
 ## Why howtfdoi?
 
-- **Blazing fast**: Uses Claude's Haiku model with streaming + prompt caching
+- **Blazing fast**: Uses fast models (Claude Haiku or GPT-4o-mini) with streaming + prompt caching
+- **Flexible**: Choose your preferred AI provider (Claude or ChatGPT)
 - **Natural language**: Ask questions the way you think
 - **CLI focused**: Specialized for command-line tools
 - **No browser needed**: Everything in your terminal
@@ -267,12 +301,13 @@ he grep
 ## How it Works
 
 1. Takes your natural language question
-2. Streams to Claude's API using Haiku (fastest model)
-3. Uses prompt caching for repeated queries (even faster!)
-4. Platform detection ensures OS-specific answers
-5. Parses and colorizes the output
-6. Checks for dangerous patterns
-7. Saves to history automatically
+2. Determines which AI provider to use (Claude or ChatGPT)
+3. Streams to the selected API using fast models (Haiku or GPT-4o-mini)
+4. Uses prompt caching for repeated queries (even faster with Claude!)
+5. Platform detection ensures OS-specific answers
+6. Parses and colorizes the output
+7. Checks for dangerous patterns
+8. Saves to history automatically
 
 ## Troubleshooting
 
@@ -289,8 +324,11 @@ he grep
 
 **API errors?**
 
-- Verify your API key: `echo $ANTHROPIC_API_KEY`
-- Check your Anthropic account has credits
+- Verify your API key is set:
+  - For Claude: `echo $ANTHROPIC_API_KEY`
+  - For ChatGPT: `echo $OPENAI_API_KEY`
+- Check which provider is being used: `howtfdoi -v list files`
+- Verify your account has credits (Anthropic Console or OpenAI Dashboard)
 
 ## Contributing
 

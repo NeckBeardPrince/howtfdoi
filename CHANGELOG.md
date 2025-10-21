@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2025-10-21
+
+### Added
+
+- **Multiple AI Provider Support**: Choose between Claude (Anthropic) or ChatGPT (OpenAI)
+  - New `HOWTFDOI_AI_PROVIDER` environment variable to select provider (anthropic, openai, or chatgpt)
+  - Auto-detection: Uses Anthropic by default, falls back to OpenAI if only OpenAI key is set
+  - Provider abstraction layer with `Provider` interface for extensibility
+  - `AnthropicProvider` implementation with streaming and prompt caching
+  - `OpenAIProvider` implementation with streaming support (uses GPT-4o-mini model)
+- Enhanced help output with comprehensive getting started guide
+  - Clear step-by-step setup instructions
+  - Better organized sections (Getting Started, Usage, Flags, Environment Variables, Examples)
+  - Direct links to API key signup pages (console.anthropic.com, platform.openai.com)
+  - More realistic example queries
+  - Interactive mode documentation in help text
+
+### Changed
+
+- Help message now includes detailed onboarding for new users
+- Error messages now indicate which provider's API key is missing
+- Verbose mode now displays which AI provider is being used
+- Updated all documentation (README.md, CLAUDE.md) to reflect multi-provider support
+
+### Dependencies
+
+- Added `github.com/sashabaranov/go-openai` v1.41.2 for OpenAI API integration
+
 ## [1.0.4] - 2025-10-21
 
 ### Added
@@ -93,7 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confirmation prompts before command execution
 - API key validation on startup
 
-[unreleased]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.4...HEAD
+[unreleased]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.1.0...HEAD
 [1.0.4]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.1...v1.0.2

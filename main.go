@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,11 +20,13 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/chzyer/readline"
 	"github.com/fatih/color"
+	openai "github.com/sashabaranov/go-openai"
 )
 
 const (
 	// Model configuration
 	claudeModel = anthropic.ModelClaudeHaiku4_5
+	gptModel    = "gpt-4o-mini"
 	maxTokens   = 1024
 
 	// UI thresholds
@@ -31,6 +35,11 @@ const (
 
 	// History file name
 	historyFileName = ".howtfdoi_history"
+
+	// Provider types
+	providerAnthropic = "anthropic"
+	providerOpenAI    = "openai"
+	providerChatGPT   = "chatgpt" // alias for openai
 )
 
 var (
@@ -62,6 +71,7 @@ type Config struct {
 	HistoryFile string
 	Platform    string
 	Verbose     bool
+	Provider    string // "anthropic" or "openai"
 }
 
 // Response holds the parsed response
@@ -77,19 +87,152 @@ type ResponseOptions struct {
 	Execute         bool
 }
 
+// Provider defines the interface for AI providers (Anthropic, OpenAI, etc.)
+type Provider interface {
+	// Query sends a query to the AI provider and returns the response text
+	Query(ctx context.Context, systemPrompt, userQuery string) (string, error)
+}
+
+// AnthropicProvider implements Provider for Anthropic's Claude API
+type AnthropicProvider struct {
+	client anthropic.Client
+}
+
+// NewAnthropicProvider creates a new Anthropic provider
+func NewAnthropicProvider(apiKey string) *AnthropicProvider {
+	return &AnthropicProvider{
+		client: anthropic.NewClient(option.WithAPIKey(apiKey)),
+	}
+}
+
+// Query sends a query to Anthropic's API
+func (p *AnthropicProvider) Query(ctx context.Context, systemPrompt, userQuery string) (string, error) {
+	stream := p.client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
+		Model:     claudeModel,
+		MaxTokens: maxTokens,
+		System: []anthropic.TextBlockParam{
+			{
+				Type: "text",
+				Text: systemPrompt,
+				// Enable prompt caching for the system prompt
+				CacheControl: anthropic.CacheControlEphemeralParam{
+					Type: "ephemeral",
+				},
+			},
+		},
+		Messages: []anthropic.MessageParam{
+			{
+				Role: "user",
+				Content: []anthropic.ContentBlockParamUnion{
+					anthropic.NewTextBlock(userQuery),
+				},
+			},
+		},
+	})
+
+	var fullResponse strings.Builder
+	for stream.Next() {
+		event := stream.Current()
+		if event.Type == "content_block_delta" {
+			contentDelta := event.AsContentBlockDelta()
+			textDelta := contentDelta.Delta.AsTextDelta()
+			fullResponse.WriteString(textDelta.Text)
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		return "", err
+	}
+
+	return fullResponse.String(), nil
+}
+
+// OpenAIProvider implements Provider for OpenAI's API
+type OpenAIProvider struct {
+	client *openai.Client
+}
+
+// NewOpenAIProvider creates a new OpenAI provider
+func NewOpenAIProvider(apiKey string) *OpenAIProvider {
+	return &OpenAIProvider{
+		client: openai.NewClient(apiKey),
+	}
+}
+
+// Query sends a query to OpenAI's API
+func (p *OpenAIProvider) Query(ctx context.Context, systemPrompt, userQuery string) (string, error) {
+	stream, err := p.client.CreateChatCompletionStream(ctx, openai.ChatCompletionRequest{
+		Model:     gptModel,
+		MaxTokens: maxTokens,
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleSystem,
+				Content: systemPrompt,
+			},
+			{
+				Role:    openai.ChatMessageRoleUser,
+				Content: userQuery,
+			},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	defer stream.Close()
+
+	var fullResponse strings.Builder
+	for {
+		response, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+
+		if len(response.Choices) > 0 {
+			fullResponse.WriteString(response.Choices[0].Delta.Content)
+		}
+	}
+
+	return fullResponse.String(), nil
+}
+
 func main() {
 	// Customize help output to include version information
 	flag.Usage = func() {
 		fmt.Printf("howtfdoi version %s\n", version)
 		fmt.Printf("Download and documentation: %s\n\n", repository)
-		fmt.Fprintf(os.Stderr, "Usage: howtfdoi [flags] <query>\n\n")
-		fmt.Fprintf(os.Stderr, "Flags:\n")
+
+		fmt.Fprintf(os.Stderr, "Ask CLI questions in plain English and get instant answers powered by AI.\n\n")
+
+		fmt.Fprintf(os.Stderr, "GETTING STARTED:\n")
+		fmt.Fprintf(os.Stderr, "  1. Set up your API key (choose one):\n")
+		fmt.Fprintf(os.Stderr, "     • For Claude:   export ANTHROPIC_API_KEY='your-key-here'\n")
+		fmt.Fprintf(os.Stderr, "     • For ChatGPT:  export OPENAI_API_KEY='your-key-here'\n\n")
+		fmt.Fprintf(os.Stderr, "  2. Ask a question:\n")
+		fmt.Fprintf(os.Stderr, "     howtfdoi compress a directory\n\n")
+
+		fmt.Fprintf(os.Stderr, "USAGE:\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi [flags] <query>\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi              (interactive mode)\n\n")
+
+		fmt.Fprintf(os.Stderr, "FLAGS:\n")
 		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+
+		fmt.Fprintf(os.Stderr, "\nENVIRONMENT VARIABLES:\n")
+		fmt.Fprintf(os.Stderr, "  ANTHROPIC_API_KEY     Your Anthropic API key (get it at console.anthropic.com)\n")
+		fmt.Fprintf(os.Stderr, "  OPENAI_API_KEY        Your OpenAI API key (get it at platform.openai.com)\n")
+		fmt.Fprintf(os.Stderr, "  HOWTFDOI_AI_PROVIDER  Override provider choice: anthropic, openai, or chatgpt\n")
+		fmt.Fprintf(os.Stderr, "                        (defaults to anthropic, or auto-detects from available keys)\n")
+
+		fmt.Fprintf(os.Stderr, "\nEXAMPLES:\n")
 		fmt.Fprintf(os.Stderr, "  howtfdoi list files\n")
-		fmt.Fprintf(os.Stderr, "  howtfdoi -c compress a directory\n")
-		fmt.Fprintf(os.Stderr, "  howtfdoi -e tar\n")
-		fmt.Fprintf(os.Stderr, "  howtfdoi -v find large files\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi find large files over 100MB\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi -c compress a directory    # copy to clipboard\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi -e tar                     # show examples\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi -x git commit              # execute with confirmation\n")
+		fmt.Fprintf(os.Stderr, "  HOWTFDOI_AI_PROVIDER=openai howtfdoi list files\n\n")
 	}
 
 	// Parse flags
@@ -112,8 +255,13 @@ func main() {
 
 	// Check API key
 	if config.APIKey == "" {
-		color.Red("Error: ANTHROPIC_API_KEY environment variable not set")
-		fmt.Fprintln(os.Stderr, "Set it with: export ANTHROPIC_API_KEY='your-api-key'")
+		if config.Provider == providerAnthropic {
+			color.Red("Error: ANTHROPIC_API_KEY environment variable not set")
+			fmt.Fprintln(os.Stderr, "Set it with: export ANTHROPIC_API_KEY='your-api-key'")
+		} else {
+			color.Red("Error: OPENAI_API_KEY environment variable not set")
+			fmt.Fprintln(os.Stderr, "Set it with: export OPENAI_API_KEY='your-api-key'")
+		}
 		os.Exit(1)
 	}
 
@@ -156,11 +304,40 @@ func setupConfig(verbose bool) Config {
 		color.Cyan("Using data directory: %s", dataDir)
 	}
 
+	// Determine which provider to use
+	// Check HOWTFDOI_AI_PROVIDER env var first, then fall back to checking which API key is set
+	provider := strings.ToLower(os.Getenv("HOWTFDOI_AI_PROVIDER"))
+	var apiKey string
+
+	switch provider {
+	case providerOpenAI, providerChatGPT:
+		provider = providerOpenAI
+		apiKey = os.Getenv("OPENAI_API_KEY")
+	case providerAnthropic, "claude", "":
+		// Default to Anthropic if not specified or if "claude" is specified
+		provider = providerAnthropic
+		apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		// If Anthropic key not set but OpenAI key is, switch to OpenAI
+		if apiKey == "" && os.Getenv("OPENAI_API_KEY") != "" {
+			provider = providerOpenAI
+			apiKey = os.Getenv("OPENAI_API_KEY")
+		}
+	default:
+		color.Yellow("Warning: Unknown HOWTFDOI_AI_PROVIDER '%s', defaulting to Anthropic", provider)
+		provider = providerAnthropic
+		apiKey = os.Getenv("ANTHROPIC_API_KEY")
+	}
+
+	if verbose {
+		color.Cyan("Using AI provider: %s", provider)
+	}
+
 	return Config{
-		APIKey:      os.Getenv("ANTHROPIC_API_KEY"),
+		APIKey:      apiKey,
 		HistoryFile: filepath.Join(dataDir, historyFileName),
 		Platform:    runtime.GOOS,
 		Verbose:     verbose,
+		Provider:    provider,
 	}
 }
 
@@ -183,12 +360,18 @@ func getDataDirectory() string {
 }
 
 func runQuery(config Config, query string, showExamples bool) (*Response, error) {
-	// Create Claude client
-	client := anthropic.NewClient(
-		option.WithAPIKey(config.APIKey),
-	)
+	// Create the appropriate provider
+	var provider Provider
+	switch config.Provider {
+	case providerOpenAI:
+		provider = NewOpenAIProvider(config.APIKey)
+	case providerAnthropic:
+		provider = NewAnthropicProvider(config.APIKey)
+	default:
+		return nil, fmt.Errorf("unsupported provider: %s", config.Provider)
+	}
 
-	// Build system prompt with platform info and prompt caching
+	// Build system prompt with platform info
 	systemPrompt := buildSystemPrompt(config.Platform, showExamples)
 
 	// Build user query
@@ -197,48 +380,14 @@ func runQuery(config Config, query string, showExamples bool) (*Response, error)
 		userQuery = fmt.Sprintf("Platform: %s\nQuery: %s", config.Platform, query)
 	}
 
-	// Stream the response for speed
-	stream := client.Messages.NewStreaming(context.Background(), anthropic.MessageNewParams{
-		Model:     claudeModel,
-		MaxTokens: maxTokens,
-		System: []anthropic.TextBlockParam{
-			{
-				Type: "text",
-				Text: systemPrompt,
-				// Enable prompt caching for the system prompt
-				CacheControl: anthropic.CacheControlEphemeralParam{
-					Type: "ephemeral",
-				},
-			},
-		},
-		Messages: []anthropic.MessageParam{
-			{
-				Role: "user",
-				Content: []anthropic.ContentBlockParamUnion{
-					anthropic.NewTextBlock(userQuery),
-				},
-			},
-		},
-	})
-
-	// Collect the full response
-	var fullResponse strings.Builder
-	for stream.Next() {
-		event := stream.Current()
-
-		if event.Type == "content_block_delta" {
-			contentDelta := event.AsContentBlockDelta()
-			textDelta := contentDelta.Delta.AsTextDelta()
-			fullResponse.WriteString(textDelta.Text)
-		}
-	}
-
-	if err := stream.Err(); err != nil {
+	// Query the provider
+	fullResponse, err := provider.Query(context.Background(), systemPrompt, userQuery)
+	if err != nil {
 		return nil, err
 	}
 
 	// Parse the response
-	return parseResponse(fullResponse.String()), nil
+	return parseResponse(fullResponse), nil
 }
 
 func buildSystemPrompt(platform string, showExamples bool) string {
