@@ -264,8 +264,11 @@ func setupConfig() Config {
 
 		apiKey = os.Getenv("OPENAI_API_KEY")
 		if apiKey == "" {
-			// LM Studio doesn't require an API key, but the SDK needs something
-			apiKey = "lm-studio"
+			// LM Studio and custom endpoints may not require an API key
+			// The SDK needs something, so use a placeholder
+			if strings.ToLower(providerType) == "lmstudio" || baseURL != "" {
+				apiKey = "not-needed"
+			}
 		}
 
 		config := openai.DefaultConfig(apiKey)
