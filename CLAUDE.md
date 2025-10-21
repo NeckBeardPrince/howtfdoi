@@ -12,6 +12,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Build the binary
 go build -o howtfdoi
 
+# Build with version info (uses Makefile)
+make build
+
 # Install to Go bin directory
 go install
 
@@ -22,12 +25,20 @@ go install
 ./howtfdoi -c list files          # Copy to clipboard
 ./howtfdoi -e tar                 # Show examples
 ./howtfdoi -x list files          # Execute with confirmation
+./howtfdoi -v find large files    # Verbose mode (shows data dir, history saves)
+
+# Test version and help
+./howtfdoi --version              # Show version info
+./howtfdoi --help                 # Show usage, flags, and examples
 
 # Test interactive mode
 ./howtfdoi                        # Launches REPL
 
-# Check history
-cat ~/.howtfdoi_history
+# Check history (XDG Base Directory compliant)
+cat ~/.local/state/howtfdoi/.howtfdoi_history
+
+# Test with custom XDG_STATE_HOME
+XDG_STATE_HOME=/tmp/test ./howtfdoi list files
 ```
 
 ## Architecture
@@ -38,18 +49,20 @@ The entire application is in `main.go` - this is intentional for simplicity and 
 
 ### Core Flow
 
-1. **Argument Parsing**: Flags (`-c`, `-e`, `-x`) parsed with `flag` package
+1. **Argument Parsing**: Flags (`-c`, `-e`, `-x`, `-v`) parsed with `flag` package
 2. **Query Processing**: Natural language query sent to Claude API (Haiku model)
 3. **Response Parsing**: Separates command from explanation for color formatting
-4. **Post-Processing**: Safety checks, history logging, clipboard copy, execution, alias suggestions
+4. **Post-Processing**: Consolidated in `handleResponse()` - safety checks, history logging, clipboard copy, execution, alias suggestions
 
 ### Key Components
 
-**Config Management** (`setupConfig`)
+**Config Management** (`setupConfig`, `getDataDirectory`)
 
 - API key from `ANTHROPIC_API_KEY` env var
-- History file at `~/.howtfdoi_history`
+- **XDG Base Directory support**: History file at `$XDG_STATE_HOME/howtfdoi/.howtfdoi_history` (or `~/.local/state/howtfdoi/.howtfdoi_history`)
 - Platform detection via `runtime.GOOS`
+- Verbose mode flag controls logging verbosity
+- Directory auto-creation on first run
 
 **Query Execution** (`runQuery`)
 
@@ -63,15 +76,27 @@ The entire application is in `main.go` - this is intentional for simplicity and 
 - Explanations: white
 - Color library: `github.com/fatih/color`
 
+**Response Handling** (`handleResponse`)
+
+- Centralized post-processing function (reduces code duplication)
+- Handles: display, dangerous command checks, history logging, clipboard copy, execution, alias suggestions
+- Uses `ResponseOptions` struct for clean flag passing
+
+**Response Parsing** (`parseResponse`, `parseInteractiveLine`)
+
+- `parseResponse()`: Extracts command and explanation from Claude's response
+- `parseInteractiveLine()`: Parses interactive mode input with inline flags
+
 **Safety Features**
 
-- `isDangerous()`: Regex patterns for risky commands (rm -rf, dd, etc.)
+- `isDangerous()`: **Pre-compiled** regex patterns for risky commands (rm -rf, dd, etc.) - eliminates repeated compilation overhead
 - `executeCommand()`: Always asks for confirmation before running
+- Dangerous patterns defined at startup for performance
 
 **Interactive Mode** (`runInteractiveMode`)
 
 - Uses `github.com/chzyer/readline` for REPL
-- Supports inline flags within queries
+- Supports inline flags within queries (`-c`, `-x`, `-e`)
 - Exit with "exit" or "quit"
 
 ## System Prompt Strategy
@@ -101,16 +126,21 @@ Both prompts include platform info and are optimized for brevity. The system pro
 - `-c` Copy command to clipboard
 - `-e` Show multiple examples (changes prompt strategy)
 - `-x` Execute command with confirmation prompt
+- `-v` Enable verbose mode (shows data directory location, history save confirmations)
+- `--version` Show version information and repository URL
+- `--help` / `-h` Show usage, available flags, and examples
 
 ## History Format
 
-Stored at `~/.howtfdoi_history`:
+Stored at `$XDG_STATE_HOME/howtfdoi/.howtfdoi_history` (or `~/.local/state/howtfdoi/.howtfdoi_history` by default):
 
 ```
 [YYYY-MM-DD HH:MM:SS] query text
 response text
 ---
 ```
+
+The tool follows the XDG Base Directory specification for state files. Set `XDG_STATE_HOME` to customize the location.
 
 ## Response Parsing Logic
 
@@ -122,8 +152,39 @@ The parser assumes:
 
 ## Adding New Dangerous Patterns
 
-Update the `dangerousPatterns` slice with regex strings. The checker runs on all responses and displays yellow warnings.
+Update the `dangerousPatterns` slice with pre-compiled `*regexp.Regexp` objects. The patterns are compiled once at startup for performance. The checker runs on all responses and displays yellow warnings.
+
+Example:
+```go
+dangerousPatterns = []*regexp.Regexp{
+    regexp.MustCompile(`rm\s+-rf\s+/`),
+    regexp.MustCompile(`your-new-pattern-here`),
+}
+```
 
 ## Platform-Specific Behavior
 
 The tool detects `darwin`, `linux`, `windows` via `runtime.GOOS` and includes platform context in queries. Claude adapts commands accordingly (e.g., `open` vs `xdg-open`).
+
+## Code Quality & Performance (v1.0.4+)
+
+Recent refactoring improvements include:
+
+**Performance Optimizations:**
+- Pre-compiled regex patterns (eliminates runtime compilation overhead)
+- Centralized response handling reduces code duplication
+
+**Code Organization:**
+- Constants extracted for magic numbers (`maxTokens`, `aliasLengthThreshold`, etc.)
+- `handleResponse()` consolidates post-processing logic
+- `parseInteractiveLine()` separates parsing from interactive loop
+- `getDataDirectory()` encapsulates XDG directory logic
+
+**Error Handling:**
+- Explicit error handling with clear user messages
+- Verbose mode for debugging and troubleshooting
+- No silent failures - all errors logged or reported
+
+**Documentation:**
+- Comprehensive function comments explaining purpose and behavior
+- Code structure documented for maintainability

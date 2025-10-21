@@ -2,7 +2,7 @@
 
 # Variables
 BINARY_NAME=howtfdoi
-VERSION?=1.0.3
+VERSION?=1.0.4
 BUILD_FLAGS=-ldflags="-s -w -X main.version=$(VERSION)"
 
 help: ## Show this help

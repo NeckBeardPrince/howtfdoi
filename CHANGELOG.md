@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2025-10-21
+
+### Added
+
+- Verbose logging mode with `-v` flag (shows data directory location and history save confirmations)
+- XDG Base Directory specification support for state files
+  - History now stored in `$XDG_STATE_HOME/howtfdoi/` (or `~/.local/state/howtfdoi/`)
+  - Auto-creates directory structure on first run
+- Enhanced help output with `--help` and `-h` flags now showing version information, usage, and examples
+- Improved code documentation with detailed function comments
+
+### Changed
+
+- **BREAKING**: `-v` flag now enables verbose mode instead of showing version (use `--version` for version info)
+- Refactored response handling into centralized `handleResponse()` function to reduce code duplication
+- Pre-compiled dangerous command regex patterns for better performance
+- Improved `parseResponse()` logic for cleaner parsing
+- Error handling now fails explicitly instead of silently when home directory is unavailable
+- History save failures now logged in verbose mode instead of failing silently
+
+### Fixed
+
+- Home directory fallback now provides clear error messages instead of silently falling back to current directory
+- Invalid flags now display helpful usage information along with version details
+
+### Performance
+
+- Pre-compiled regex patterns eliminate repeated compilation overhead in `isDangerous()` checks
+- Reduced redundant code execution through function consolidation
+
 ## [1.0.3] - 2025-10-15
 
 ### Added
@@ -63,7 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confirmation prompts before command execution
 - API key validation on startup
 
-[unreleased]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.3...HEAD
+[unreleased]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.0...v1.0.1

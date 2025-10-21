@@ -61,6 +61,7 @@ type Config struct {
 	APIKey      string
 	HistoryFile string
 	Platform    string
+	Verbose     bool
 }
 
 // Response holds the parsed response
@@ -77,23 +78,37 @@ type ResponseOptions struct {
 }
 
 func main() {
+	// Customize help output to include version information
+	flag.Usage = func() {
+		fmt.Printf("howtfdoi version %s\n", version)
+		fmt.Printf("Download and documentation: %s\n\n", repository)
+		fmt.Fprintf(os.Stderr, "Usage: howtfdoi [flags] <query>\n\n")
+		fmt.Fprintf(os.Stderr, "Flags:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi list files\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi -c compress a directory\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi -e tar\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi -v find large files\n")
+	}
+
 	// Parse flags
 	versionFlag := flag.Bool("version", false, "Show version information")
-	versionShortFlag := flag.Bool("v", false, "Show version information")
+	verboseFlag := flag.Bool("v", false, "Enable verbose logging")
 	copyFlag := flag.Bool("c", false, "Copy command to clipboard")
 	executeFlag := flag.Bool("x", false, "Execute the command directly")
 	examplesFlag := flag.Bool("e", false, "Show multiple examples")
 	flag.Parse()
 
 	// Handle version flag
-	if *versionFlag || *versionShortFlag {
+	if *versionFlag {
 		fmt.Printf("howtfdoi version %s\n", version)
 		fmt.Printf("Download and documentation: %s\n", repository)
 		os.Exit(0)
 	}
 
 	// Setup config
-	config := setupConfig()
+	config := setupConfig(*verboseFlag)
 
 	// Check API key
 	if config.APIKey == "" {
@@ -127,17 +142,44 @@ func main() {
 	handleResponse(config, query, response, opts)
 }
 
-func setupConfig() Config {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		// Fallback to current directory if home directory is unavailable
-		homeDir = "."
+func setupConfig(verbose bool) Config {
+	dataDir := getDataDirectory()
+
+	// Ensure the data directory exists
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		// If we can't create the directory, fail explicitly
+		color.Red("Error: Could not create data directory at %s: %v", dataDir, err)
+		os.Exit(1)
 	}
+
+	if verbose {
+		color.Cyan("Using data directory: %s", dataDir)
+	}
+
 	return Config{
 		APIKey:      os.Getenv("ANTHROPIC_API_KEY"),
-		HistoryFile: filepath.Join(homeDir, historyFileName),
+		HistoryFile: filepath.Join(dataDir, historyFileName),
 		Platform:    runtime.GOOS,
+		Verbose:     verbose,
 	}
+}
+
+// getDataDirectory returns the appropriate data directory following XDG Base Directory spec
+func getDataDirectory() string {
+	// Check for XDG_STATE_HOME first (for logs and history)
+	if xdgStateHome := os.Getenv("XDG_STATE_HOME"); xdgStateHome != "" {
+		return filepath.Join(xdgStateHome, "howtfdoi")
+	}
+
+	// Fall back to ~/.local/state/howtfdoi
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// If we can't get home directory, fail explicitly
+		color.Red("Error: Could not determine home directory: %v", err)
+		os.Exit(1)
+	}
+
+	return filepath.Join(homeDir, ".local", "state", "howtfdoi")
 }
 
 func runQuery(config Config, query string, showExamples bool) (*Response, error) {
@@ -236,12 +278,17 @@ tar -czf archive.tar.gz directory/
 (Creates a compressed tarball of the directory)`, platform, platform)
 }
 
+// parseResponse extracts the command and explanation from Claude's response.
+// The expected format is:
+//   - First non-empty line: the actual command
+//   - Remaining lines: explanation/context
 func parseResponse(text string) *Response {
 	lines := strings.Split(text, "\n")
 	response := &Response{
 		FullText: text,
 	}
 
+	// Filter out empty lines first to simplify parsing
 	var nonEmptyLines []string
 	for _, line := range lines {
 		if trimmed := strings.TrimSpace(line); trimmed != "" {
@@ -281,7 +328,9 @@ func displayResponse(response *Response) {
 	}
 }
 
-// handleResponse processes a response with all requested options
+// handleResponse processes a response with all requested options.
+// This consolidates post-processing logic: display, safety checks, history logging,
+// clipboard copying, execution, and alias suggestions.
 func handleResponse(config Config, query string, response *Response, opts ResponseOptions) {
 	// Display the response
 	displayResponse(response)
@@ -313,6 +362,8 @@ func handleResponse(config Config, query string, response *Response, opts Respon
 	}
 }
 
+// isDangerous checks if a command matches any dangerous patterns.
+// Uses pre-compiled regex patterns for efficiency.
 func isDangerous(command string) bool {
 	for _, pattern := range dangerousPatterns {
 		if pattern.MatchString(command) {
@@ -322,10 +373,14 @@ func isDangerous(command string) bool {
 	return false
 }
 
+// saveToHistory appends a query and response to the history file.
+// Logs warnings in verbose mode if saving fails.
 func saveToHistory(config Config, query, response string) {
 	f, err := os.OpenFile(config.HistoryFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		// Silently fail - history is not critical
+		if config.Verbose {
+			color.Yellow("Warning: Could not open history file: %v", err)
+		}
 		return
 	}
 	defer f.Close()
@@ -333,8 +388,14 @@ func saveToHistory(config Config, query, response string) {
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	entry := fmt.Sprintf("[%s] %s\n%s\n---\n", timestamp, query, response)
 	if _, err := f.WriteString(entry); err != nil {
-		// Silently fail - history is not critical
+		if config.Verbose {
+			color.Yellow("Warning: Could not write to history file: %v", err)
+		}
 		return
+	}
+
+	if config.Verbose {
+		color.Cyan("Saved to history: %s", config.HistoryFile)
 	}
 }
 
@@ -392,7 +453,8 @@ func generateAliasName(query string) string {
 	return strings.ToLower(name)
 }
 
-// parseInteractiveLine extracts query and flags from an interactive line
+// parseInteractiveLine extracts query and flags from an interactive line.
+// Supports inline flags: -c (copy), -x (execute), -e (examples)
 func parseInteractiveLine(line string) (query string, opts ResponseOptions, showExamples bool) {
 	parts := strings.Fields(line)
 	var queryParts []string
