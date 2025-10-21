@@ -40,16 +40,21 @@ var (
 	repository = "https://github.com/NeckBeardPrince/howtfdoi"
 )
 
-// Dangerous command patterns (compiled once at startup)
-var dangerousPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`rm\s+-rf\s+/`),
-	regexp.MustCompile(`rm\s+-rf\s+\*`),
-	regexp.MustCompile(`dd\s+.*of=/dev/`),
-	regexp.MustCompile(`mkfs\.`),
-	regexp.MustCompile(`:(){ :|:& };:`),
-	regexp.MustCompile(`>\s*/dev/sd`),
-	regexp.MustCompile(`mv\s+.*\s+/dev/null`),
-}
+var (
+	// Dangerous command patterns (compiled once at startup)
+	dangerousPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`rm\s+-rf\s+/`),
+		regexp.MustCompile(`rm\s+-rf\s+\*`),
+		regexp.MustCompile(`dd\s+.*of=/dev/`),
+		regexp.MustCompile(`mkfs\.`),
+		regexp.MustCompile(`:(){ :|:& };:`),
+		regexp.MustCompile(`>\s*/dev/sd`),
+		regexp.MustCompile(`mv\s+.*\s+/dev/null`),
+	}
+
+	// Regex for sanitizing alias names (compiled once at startup)
+	nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9]`)
+)
 
 // Config holds runtime configuration
 type Config struct {
@@ -237,24 +242,21 @@ func parseResponse(text string) *Response {
 		FullText: text,
 	}
 
-	// Try to find the first line that looks like a command
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
+	var nonEmptyLines []string
+	for _, line := range lines {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			nonEmptyLines = append(nonEmptyLines, trimmed)
 		}
+	}
 
-		// First non-empty line is likely the command
-		if response.Command == "" {
-			response.Command = line
-			continue
-		}
+	// First non-empty line is the command
+	if len(nonEmptyLines) > 0 {
+		response.Command = nonEmptyLines[0]
+	}
 
-		// Rest is explanation
-		if i < len(lines) {
-			response.Explanation = strings.TrimSpace(strings.Join(lines[i:], "\n"))
-			break
-		}
+	// Remaining lines are the explanation
+	if len(nonEmptyLines) > 1 {
+		response.Explanation = strings.Join(nonEmptyLines[1:], "\n")
 	}
 
 	return response
@@ -378,17 +380,38 @@ func suggestAlias(query, command string) {
 }
 
 func generateAliasName(query string) string {
-	// Create a simple alias name from the query
+	// Create a simple alias name from the query (max 3 words)
 	words := strings.Fields(query)
 	if len(words) > 3 {
 		words = words[:3]
 	}
 
+	// Join and sanitize to alphanumeric only
 	name := strings.Join(words, "")
-	name = regexp.MustCompile(`[^a-zA-Z0-9]`).ReplaceAllString(name, "")
-	name = strings.ToLower(name)
+	name = nonAlphanumericRegex.ReplaceAllString(name, "")
+	return strings.ToLower(name)
+}
 
-	return name
+// parseInteractiveLine extracts query and flags from an interactive line
+func parseInteractiveLine(line string) (query string, opts ResponseOptions, showExamples bool) {
+	parts := strings.Fields(line)
+	var queryParts []string
+
+	for _, part := range parts {
+		switch part {
+		case "-c":
+			opts.CopyToClipboard = true
+		case "-x":
+			opts.Execute = true
+		case "-e":
+			showExamples = true
+		default:
+			queryParts = append(queryParts, part)
+		}
+	}
+
+	query = strings.Join(queryParts, " ")
+	return
 }
 
 func runInteractiveMode(config Config) {
@@ -419,34 +442,14 @@ func runInteractiveMode(config Config) {
 			break
 		}
 
-		// Parse flags from the line
-		parts := strings.Fields(line)
-		copyFlag := false
-		executeFlag := false
-		examplesFlag := false
-		var queryParts []string
-
-		for _, part := range parts {
-			switch part {
-			case "-c":
-				copyFlag = true
-			case "-x":
-				executeFlag = true
-			case "-e":
-				examplesFlag = true
-			default:
-				queryParts = append(queryParts, part)
-			}
-		}
-
-		if len(queryParts) == 0 {
+		// Parse query and flags
+		query, opts, showExamples := parseInteractiveLine(line)
+		if query == "" {
 			continue
 		}
 
-		query := strings.Join(queryParts, " ")
-
 		// Run the query
-		response, err := runQuery(config, query, examplesFlag)
+		response, err := runQuery(config, query, showExamples)
 		if err != nil {
 			color.Red("Error: %v", err)
 			continue
@@ -454,10 +457,6 @@ func runInteractiveMode(config Config) {
 
 		// Handle the response
 		fmt.Println()
-		opts := ResponseOptions{
-			CopyToClipboard: copyFlag,
-			Execute:         executeFlag,
-		}
 		handleResponse(config, query, response, opts)
 		fmt.Println()
 	}
