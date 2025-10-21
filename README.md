@@ -11,10 +11,11 @@ Forget scrolling through Stack Overflow or man pages. Just ask.
 - ⚡ **Direct execution** - Run commands with confirmation
 - 📚 **Show examples** - Get multiple usage examples
 - 🚀 **Interactive mode** - REPL for continuous queries
-- 💾 **Query history** - Saves all queries to `~/.howtfdoi_history`
+- 💾 **Query history** - XDG-compliant storage in `~/.local/state/howtfdoi/`
 - 🖥️ **Platform-aware** - Detects your OS for tailored answers
 - ⚠️ **Danger warnings** - Highlights risky commands in yellow
 - 💡 **Smart suggestions** - Offers shell aliases for complex commands
+- 🔍 **Verbose mode** - Debug and troubleshoot with detailed logging
 - ⚡ **Blazing fast** - Uses prompt caching for speed
 
 ## Installation
@@ -68,6 +69,18 @@ howtfdoi -e grep
 howtfdoi -x list files
 # Runs 'ls' after confirmation
 
+# Verbose mode (shows data directory, history saves)
+howtfdoi -v compress files
+# Displays: Using data directory: ~/.local/state/howtfdoi
+
+# Show version
+howtfdoi --version
+# Output: howtfdoi version 1.0.4
+
+# Show help
+howtfdoi --help
+# Shows usage, flags, and examples
+
 # Interactive mode
 howtfdoi
 # Enters REPL - type questions continuously
@@ -77,7 +90,10 @@ howtfdoi
 
 - `-c` - Copy command to clipboard
 - `-e` - Show multiple examples
+- `-v` - Enable verbose logging (shows data directory, history saves)
 - `-x` - Execute command directly (asks for confirmation)
+- `--version` - Show version information
+- `--help` / `-h` - Show usage help and examples
 
 ### Interactive Mode
 
@@ -131,7 +147,9 @@ Add this to your ~/.bashrc or ~/.zshrc
 
 ### 💾 Query History
 
-All queries are saved to `~/.howtfdoi_history` with timestamps:
+All queries are saved with timestamps following the XDG Base Directory specification:
+
+**Default location:** `~/.local/state/howtfdoi/.howtfdoi_history`
 
 ```
 [2025-01-15 14:30:22] tarball a directory
@@ -142,8 +160,33 @@ tar -czf archive.tar.gz directory/
 View your history anytime:
 
 ```bash
-cat ~/.howtfdoi_history
+cat ~/.local/state/howtfdoi/.howtfdoi_history
 ```
+
+**Custom location:** Set `XDG_STATE_HOME` to change the base directory:
+
+```bash
+export XDG_STATE_HOME=/custom/path
+howtfdoi find files
+# History saved to: /custom/path/howtfdoi/.howtfdoi_history
+```
+
+### 🔍 Verbose Mode
+
+Use the `-v` flag to enable detailed logging for debugging and troubleshooting:
+
+```bash
+$ howtfdoi -v find large files
+Using data directory: /Users/you/.local/state/howtfdoi
+find / -type f -size +100M -exec ls -lh {} \;
+(Finds files larger than 100MB and lists them with sizes)
+Saved to history: /Users/you/.local/state/howtfdoi/.howtfdoi_history
+```
+
+Verbose mode shows:
+- Data directory location on startup
+- History file save confirmations
+- Warnings if history cannot be saved
 
 ### 🖥️ Platform Detection
 
@@ -207,6 +250,7 @@ Add a shorter alias to your shell config:
 # Add to ~/.bashrc or ~/.zshrc
 alias h='howtfdoi'
 alias hc='howtfdoi -c'
+alias hv='howtfdoi -v'
 alias hx='howtfdoi -x'
 alias he='howtfdoi -e'
 ```
@@ -216,6 +260,7 @@ Then use:
 ```bash
 h find large files
 hc compress directory
+hv debug issue          # verbose mode
 he grep
 ```
 
