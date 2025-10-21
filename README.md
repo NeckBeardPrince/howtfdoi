@@ -32,6 +32,8 @@ go install github.com/neckbeardprince/howtfdoi@latest
 
 ## Setup
 
+### Option 1: Anthropic Claude (Cloud)
+
 Set your Anthropic API key:
 
 ```bash
@@ -39,6 +41,36 @@ export ANTHROPIC_API_KEY='your-api-key-here'
 ```
 
 Get your API key from: <https://console.anthropic.com/>
+
+### Option 2: LM Studio (Local)
+
+Use LM Studio to run models locally with full privacy:
+
+```bash
+# Set the provider to LM Studio
+export LLM_PROVIDER='lmstudio'
+
+# Optional: Set custom base URL (defaults to http://localhost:1234/v1)
+export LLM_BASE_URL='http://localhost:1234/v1'
+
+# Optional: Set the model name (use whatever model you have loaded in LM Studio)
+export LLM_MODEL='local-model'
+```
+
+1. Download and install [LM Studio](https://lmstudio.ai/)
+2. Load any compatible model in LM Studio
+3. Start the local server in LM Studio (usually runs on port 1234)
+4. Run `howtfdoi` - it will connect to your local LM Studio instance
+
+### Option 3: OpenAI (Cloud)
+
+Use OpenAI's API:
+
+```bash
+export LLM_PROVIDER='openai'
+export OPENAI_API_KEY='your-openai-api-key'
+export LLM_MODEL='gpt-4'  # or gpt-3.5-turbo, etc.
+```
 
 ## Usage
 
@@ -149,6 +181,21 @@ cat ~/.howtfdoi_history
 
 Automatically detects your OS (macOS, Linux, Windows) and provides platform-specific commands when relevant.
 
+### 🏠 LM Studio Support
+
+Run completely locally with full privacy:
+
+- **No internet required** - All processing happens on your machine
+- **Free** - No API costs, unlimited queries
+- **Private** - Your queries never leave your computer
+- **Flexible** - Choose any model that runs in LM Studio
+
+Perfect for:
+- Sensitive work environments
+- Offline development
+- Cost-conscious users
+- Privacy-focused workflows
+
 ## Example Queries
 
 ```bash
@@ -222,12 +269,46 @@ he grep
 ## How it Works
 
 1. Takes your natural language question
-2. Streams to Claude's API using Haiku (fastest model)
-3. Uses prompt caching for repeated queries (even faster!)
+2. Sends to configured LLM provider (Claude, OpenAI, or LM Studio)
+3. Streams response for speed
 4. Platform detection ensures OS-specific answers
 5. Parses and colorizes the output
 6. Checks for dangerous patterns
 7. Saves to history automatically
+
+## Environment Variables Reference
+
+Configure `howtfdoi` with these environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LLM_PROVIDER` | Provider to use: `anthropic`, `openai`, or `lmstudio` | Auto-detect based on API keys |
+| `ANTHROPIC_API_KEY` | API key for Anthropic Claude | - |
+| `OPENAI_API_KEY` | API key for OpenAI | - |
+| `LLM_BASE_URL` | Custom API endpoint (for LM Studio or OpenAI-compatible servers) | `http://localhost:1234/v1` for LM Studio |
+| `LLM_MODEL` | Model name to use | Provider-specific default |
+
+### Examples
+
+```bash
+# Use Anthropic Claude (default if ANTHROPIC_API_KEY is set)
+export ANTHROPIC_API_KEY='sk-...'
+
+# Use OpenAI
+export LLM_PROVIDER='openai'
+export OPENAI_API_KEY='sk-...'
+export LLM_MODEL='gpt-4'
+
+# Use LM Studio (local)
+export LLM_PROVIDER='lmstudio'
+# LLM_BASE_URL and LLM_MODEL will default to sensible values
+
+# Use custom OpenAI-compatible server
+export LLM_PROVIDER='openai'
+export LLM_BASE_URL='https://my-server.com/v1'
+export OPENAI_API_KEY='...'
+export LLM_MODEL='my-model'
+```
 
 ## Troubleshooting
 
@@ -244,8 +325,16 @@ he grep
 
 **API errors?**
 
-- Verify your API key: `echo $ANTHROPIC_API_KEY`
-- Check your Anthropic account has credits
+- Anthropic: Verify your API key with `echo $ANTHROPIC_API_KEY` and check your account has credits
+- OpenAI: Verify your API key with `echo $OPENAI_API_KEY` and check your account has credits
+- LM Studio: Ensure LM Studio is running and the server is started (check the server tab in LM Studio)
+
+**LM Studio not connecting?**
+
+- Make sure LM Studio's local server is running (typically on port 1234)
+- Check that a model is loaded in LM Studio
+- Verify the base URL is correct: `echo $LLM_BASE_URL` (should be `http://localhost:1234/v1`)
+- Try accessing the API directly: `curl http://localhost:1234/v1/models`
 
 ## Contributing
 

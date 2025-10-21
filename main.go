@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +20,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/chzyer/readline"
 	"github.com/fatih/color"
+	openai "github.com/sashabaranov/go-openai"
 )
 
 var (
@@ -43,6 +46,12 @@ type Config struct {
 	APIKey      string
 	HistoryFile string
 	Platform    string
+	Provider    LLMProvider
+}
+
+// LLMProvider interface for different LLM backends
+type LLMProvider interface {
+	Query(ctx context.Context, systemPrompt, userQuery string) (string, error)
 }
 
 // Response holds the parsed response
@@ -50,6 +59,100 @@ type Response struct {
 	Command     string
 	Explanation string
 	FullText    string
+}
+
+// AnthropicProvider implements LLMProvider for Anthropic's Claude
+type AnthropicProvider struct {
+	client anthropic.Client
+}
+
+func (p *AnthropicProvider) Query(ctx context.Context, systemPrompt, userQuery string) (string, error) {
+	// Stream the response for speed
+	stream := p.client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
+		Model:     anthropic.ModelClaudeHaiku4_5,
+		MaxTokens: 1024,
+		System: []anthropic.TextBlockParam{
+			{
+				Type: "text",
+				Text: systemPrompt,
+				// Enable prompt caching for the system prompt
+				CacheControl: anthropic.CacheControlEphemeralParam{
+					Type: "ephemeral",
+				},
+			},
+		},
+		Messages: []anthropic.MessageParam{
+			{
+				Role: "user",
+				Content: []anthropic.ContentBlockParamUnion{
+					anthropic.NewTextBlock(userQuery),
+				},
+			},
+		},
+	})
+
+	// Collect the full response
+	var fullResponse strings.Builder
+	for stream.Next() {
+		event := stream.Current()
+
+		if event.Type == "content_block_delta" {
+			contentDelta := event.AsContentBlockDelta()
+			textDelta := contentDelta.Delta.AsTextDelta()
+			fullResponse.WriteString(textDelta.Text)
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		return "", err
+	}
+
+	return fullResponse.String(), nil
+}
+
+// OpenAIProvider implements LLMProvider for OpenAI-compatible APIs (including LM Studio)
+type OpenAIProvider struct {
+	client *openai.Client
+	model  string
+}
+
+func (p *OpenAIProvider) Query(ctx context.Context, systemPrompt, userQuery string) (string, error) {
+	stream, err := p.client.CreateChatCompletionStream(ctx, openai.ChatCompletionRequest{
+		Model: p.model,
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleSystem,
+				Content: systemPrompt,
+			},
+			{
+				Role:    openai.ChatMessageRoleUser,
+				Content: userQuery,
+			},
+		},
+		MaxTokens: 1024,
+		Stream:    true,
+	})
+	if err != nil {
+		return "", err
+	}
+	defer stream.Close()
+
+	var fullResponse strings.Builder
+	for {
+		response, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+
+		if len(response.Choices) > 0 {
+			fullResponse.WriteString(response.Choices[0].Delta.Content)
+		}
+	}
+
+	return fullResponse.String(), nil
 }
 
 func main() {
@@ -71,10 +174,13 @@ func main() {
 	// Setup config
 	config := setupConfig()
 
-	// Check API key
-	if config.APIKey == "" {
-		color.Red("Error: ANTHROPIC_API_KEY environment variable not set")
-		fmt.Fprintln(os.Stderr, "Set it with: export ANTHROPIC_API_KEY='your-api-key'")
+	// Check API key (skip for LM Studio which doesn't require one)
+	providerType := os.Getenv("LLM_PROVIDER")
+	if config.APIKey == "" && strings.ToLower(providerType) != "lmstudio" {
+		color.Red("Error: No API key configured")
+		fmt.Fprintln(os.Stderr, "For Anthropic: export ANTHROPIC_API_KEY='your-api-key'")
+		fmt.Fprintln(os.Stderr, "For OpenAI: export OPENAI_API_KEY='your-api-key'")
+		fmt.Fprintln(os.Stderr, "For LM Studio: export LLM_PROVIDER='lmstudio' (no API key needed)")
 		os.Exit(1)
 	}
 
@@ -127,20 +233,70 @@ func main() {
 
 func setupConfig() Config {
 	homeDir, _ := os.UserHomeDir()
+
+	// Determine which provider to use
+	// Priority: LLM_PROVIDER env var, then check for ANTHROPIC_API_KEY
+	providerType := os.Getenv("LLM_PROVIDER")
+	if providerType == "" {
+		// Default to anthropic if ANTHROPIC_API_KEY is set
+		if os.Getenv("ANTHROPIC_API_KEY") != "" {
+			providerType = "anthropic"
+		} else if os.Getenv("OPENAI_API_KEY") != "" {
+			providerType = "openai"
+		}
+	}
+
+	var provider LLMProvider
+	var apiKey string
+
+	switch strings.ToLower(providerType) {
+	case "openai", "lmstudio":
+		// OpenAI-compatible provider (including LM Studio)
+		baseURL := os.Getenv("LLM_BASE_URL")
+		if baseURL == "" && strings.ToLower(providerType) == "lmstudio" {
+			baseURL = "http://localhost:1234/v1"
+		}
+
+		model := os.Getenv("LLM_MODEL")
+		if model == "" {
+			model = "gpt-3.5-turbo" // reasonable default
+		}
+
+		apiKey = os.Getenv("OPENAI_API_KEY")
+		if apiKey == "" {
+			// LM Studio doesn't require an API key, but the SDK needs something
+			apiKey = "lm-studio"
+		}
+
+		config := openai.DefaultConfig(apiKey)
+		if baseURL != "" {
+			config.BaseURL = baseURL
+		}
+
+		provider = &OpenAIProvider{
+			client: openai.NewClientWithConfig(config),
+			model:  model,
+		}
+
+	default:
+		// Default to Anthropic
+		apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		client := anthropic.NewClient(option.WithAPIKey(apiKey))
+		provider = &AnthropicProvider{
+			client: client,
+		}
+	}
+
 	return Config{
-		APIKey:      os.Getenv("ANTHROPIC_API_KEY"),
+		APIKey:      apiKey,
 		HistoryFile: filepath.Join(homeDir, ".howtfdoi_history"),
 		Platform:    runtime.GOOS,
+		Provider:    provider,
 	}
 }
 
 func runQuery(config Config, query string, showExamples bool) (*Response, error) {
-	// Create Claude client
-	client := anthropic.NewClient(
-		option.WithAPIKey(config.APIKey),
-	)
-
-	// Build system prompt with platform info and prompt caching
+	// Build system prompt with platform info
 	systemPrompt := buildSystemPrompt(config.Platform, showExamples)
 
 	// Build user query
@@ -149,48 +305,14 @@ func runQuery(config Config, query string, showExamples bool) (*Response, error)
 		userQuery = fmt.Sprintf("Platform: %s\nQuery: %s", config.Platform, query)
 	}
 
-	// Stream the response for speed
-	stream := client.Messages.NewStreaming(context.Background(), anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaudeHaiku4_5,
-		MaxTokens: 1024,
-		System: []anthropic.TextBlockParam{
-			{
-				Type: "text",
-				Text: systemPrompt,
-				// Enable prompt caching for the system prompt
-				CacheControl: anthropic.CacheControlEphemeralParam{
-					Type: "ephemeral",
-				},
-			},
-		},
-		Messages: []anthropic.MessageParam{
-			{
-				Role: "user",
-				Content: []anthropic.ContentBlockParamUnion{
-					anthropic.NewTextBlock(userQuery),
-				},
-			},
-		},
-	})
-
-	// Collect the full response
-	var fullResponse strings.Builder
-	for stream.Next() {
-		event := stream.Current()
-
-		if event.Type == "content_block_delta" {
-			contentDelta := event.AsContentBlockDelta()
-			textDelta := contentDelta.Delta.AsTextDelta()
-			fullResponse.WriteString(textDelta.Text)
-		}
-	}
-
-	if err := stream.Err(); err != nil {
+	// Use the configured provider to get the response
+	fullResponse, err := config.Provider.Query(context.Background(), systemPrompt, userQuery)
+	if err != nil {
 		return nil, err
 	}
 
 	// Parse the response
-	return parseResponse(fullResponse.String()), nil
+	return parseResponse(fullResponse), nil
 }
 
 func buildSystemPrompt(platform string, showExamples bool) string {
