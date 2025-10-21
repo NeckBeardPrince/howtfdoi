@@ -23,6 +23,19 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
+const (
+	// Model configuration
+	claudeModel = anthropic.ModelClaudeHaiku4_5
+	maxTokens   = 1024
+
+	// UI thresholds
+	aliasLengthThreshold = 40
+	aliasPipeThreshold   = 1
+
+	// History file name
+	historyFileName = ".howtfdoi_history"
+)
+
 var (
 	// version is set at build time via -ldflags
 	version = "dev"
@@ -30,22 +43,28 @@ var (
 	repository = "https://github.com/NeckBeardPrince/howtfdoi"
 )
 
-// Dangerous command patterns
-var dangerousPatterns = []string{
-	`rm\s+-rf\s+/`,
-	`rm\s+-rf\s+\*`,
-	`dd\s+.*of=/dev/`,
-	`mkfs\.`,
-	`:(){ :|:& };:`,
-	`>\s*/dev/sd`,
-	`mv\s+.*\s+/dev/null`,
-}
+var (
+	// Dangerous command patterns (compiled once at startup)
+	dangerousPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`rm\s+-rf\s+/`),
+		regexp.MustCompile(`rm\s+-rf\s+\*`),
+		regexp.MustCompile(`dd\s+.*of=/dev/`),
+		regexp.MustCompile(`mkfs\.`),
+		regexp.MustCompile(`:(){ :|:& };:`),
+		regexp.MustCompile(`>\s*/dev/sd`),
+		regexp.MustCompile(`mv\s+.*\s+/dev/null`),
+	}
+
+	// Regex for sanitizing alias names (compiled once at startup)
+	nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9]`)
+)
 
 // Config holds runtime configuration
 type Config struct {
 	APIKey      string
 	HistoryFile string
 	Platform    string
+	Verbose     bool
 	Provider    LLMProvider
 }
 
@@ -61,16 +80,27 @@ type Response struct {
 	FullText    string
 }
 
+// ResponseOptions holds options for processing responses
+type ResponseOptions struct {
+	CopyToClipboard bool
+	Execute         bool
+}
+
 // AnthropicProvider implements LLMProvider for Anthropic's Claude
 type AnthropicProvider struct {
-	client anthropic.Client
+	client  anthropic.Client
+	verbose bool
 }
 
 func (p *AnthropicProvider) Query(ctx context.Context, systemPrompt, userQuery string) (string, error) {
+	if p.verbose {
+		color.Cyan("Using Anthropic Claude API")
+	}
+
 	// Stream the response for speed
 	stream := p.client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaudeHaiku4_5,
-		MaxTokens: 1024,
+		Model:     claudeModel,
+		MaxTokens: maxTokens,
 		System: []anthropic.TextBlockParam{
 			{
 				Type: "text",
@@ -112,11 +142,16 @@ func (p *AnthropicProvider) Query(ctx context.Context, systemPrompt, userQuery s
 
 // OpenAIProvider implements LLMProvider for OpenAI-compatible APIs (including LM Studio)
 type OpenAIProvider struct {
-	client *openai.Client
-	model  string
+	client  *openai.Client
+	model   string
+	verbose bool
 }
 
 func (p *OpenAIProvider) Query(ctx context.Context, systemPrompt, userQuery string) (string, error) {
+	if p.verbose {
+		color.Cyan("Using OpenAI-compatible API (model: %s)", p.model)
+	}
+
 	stream, err := p.client.CreateChatCompletionStream(ctx, openai.ChatCompletionRequest{
 		Model: p.model,
 		Messages: []openai.ChatCompletionMessage{
@@ -129,7 +164,7 @@ func (p *OpenAIProvider) Query(ctx context.Context, systemPrompt, userQuery stri
 				Content: userQuery,
 			},
 		},
-		MaxTokens: 1024,
+		MaxTokens: maxTokens,
 		Stream:    true,
 	})
 	if err != nil {
@@ -156,23 +191,37 @@ func (p *OpenAIProvider) Query(ctx context.Context, systemPrompt, userQuery stri
 }
 
 func main() {
+	// Customize help output to include version information
+	flag.Usage = func() {
+		fmt.Printf("howtfdoi version %s\n", version)
+		fmt.Printf("Download and documentation: %s\n\n", repository)
+		fmt.Fprintf(os.Stderr, "Usage: howtfdoi [flags] <query>\n\n")
+		fmt.Fprintf(os.Stderr, "Flags:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi list files\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi -c compress a directory\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi -e tar\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi -v find large files\n")
+	}
+
 	// Parse flags
 	versionFlag := flag.Bool("version", false, "Show version information")
-	versionShortFlag := flag.Bool("v", false, "Show version information")
+	verboseFlag := flag.Bool("v", false, "Enable verbose logging")
 	copyFlag := flag.Bool("c", false, "Copy command to clipboard")
 	executeFlag := flag.Bool("x", false, "Execute the command directly")
 	examplesFlag := flag.Bool("e", false, "Show multiple examples")
 	flag.Parse()
 
 	// Handle version flag
-	if *versionFlag || *versionShortFlag {
+	if *versionFlag {
 		fmt.Printf("howtfdoi version %s\n", version)
 		fmt.Printf("Download and documentation: %s\n", repository)
 		os.Exit(0)
 	}
 
 	// Setup config
-	config := setupConfig()
+	config := setupConfig(*verboseFlag)
 
 	// Check API key (skip for LM Studio which doesn't require one)
 	providerType := os.Getenv("LLM_PROVIDER")
@@ -201,38 +250,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Display the response with colors
-	displayResponse(response)
-
-	// Check for dangerous commands
-	if isDangerous(response.Command) {
-		color.Yellow("\n⚠️  WARNING: This command may be dangerous!")
-		color.Yellow("Please review carefully before executing.")
+	// Process the response
+	opts := ResponseOptions{
+		CopyToClipboard: *copyFlag,
+		Execute:         *executeFlag,
 	}
-
-	// Save to history
-	saveToHistory(config, query, response.FullText)
-
-	// Copy to clipboard if requested
-	if *copyFlag && response.Command != "" {
-		if err := clipboard.WriteAll(response.Command); err == nil {
-			color.Cyan("\n📋 Command copied to clipboard!")
-		}
-	}
-
-	// Execute if requested
-	if *executeFlag && response.Command != "" {
-		executeCommand(response.Command)
-	}
-
-	// Suggest alias for complex commands
-	if shouldSuggestAlias(response.Command) {
-		suggestAlias(query, response.Command)
-	}
+	processResponse(config, query, response, opts)
 }
 
-func setupConfig() Config {
-	homeDir, _ := os.UserHomeDir()
+func setupConfig(verbose bool) Config {
+	dataDir := getDataDirectory()
+
+	// Ensure the data directory exists
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		// If we can't create the directory, fail explicitly
+		color.Red("Error: Could not create data directory at %s: %v", dataDir, err)
+		os.Exit(1)
+	}
+
+	if verbose {
+		color.Cyan("Using data directory: %s", dataDir)
+	}
 
 	// Determine which provider to use
 	// Priority: LLM_PROVIDER env var, then check for ANTHROPIC_API_KEY
@@ -277,8 +315,9 @@ func setupConfig() Config {
 		}
 
 		provider = &OpenAIProvider{
-			client: openai.NewClientWithConfig(config),
-			model:  model,
+			client:  openai.NewClientWithConfig(config),
+			model:   model,
+			verbose: verbose,
 		}
 
 	default:
@@ -286,16 +325,36 @@ func setupConfig() Config {
 		apiKey = os.Getenv("ANTHROPIC_API_KEY")
 		client := anthropic.NewClient(option.WithAPIKey(apiKey))
 		provider = &AnthropicProvider{
-			client: client,
+			client:  client,
+			verbose: verbose,
 		}
 	}
 
 	return Config{
 		APIKey:      apiKey,
-		HistoryFile: filepath.Join(homeDir, ".howtfdoi_history"),
+		HistoryFile: filepath.Join(dataDir, historyFileName),
 		Platform:    runtime.GOOS,
+		Verbose:     verbose,
 		Provider:    provider,
 	}
+}
+
+// getDataDirectory returns the appropriate data directory following XDG Base Directory spec
+func getDataDirectory() string {
+	// Check for XDG_STATE_HOME first (for logs and history)
+	if xdgStateHome := os.Getenv("XDG_STATE_HOME"); xdgStateHome != "" {
+		return filepath.Join(xdgStateHome, "howtfdoi")
+	}
+
+	// Fall back to ~/.local/state/howtfdoi
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// If we can't get home directory, fail explicitly
+		color.Red("Error: Could not determine home directory: %v", err)
+		os.Exit(1)
+	}
+
+	return filepath.Join(homeDir, ".local", "state", "howtfdoi")
 }
 
 func runQuery(config Config, query string, showExamples bool) (*Response, error) {
@@ -384,6 +443,37 @@ func parseResponse(text string) *Response {
 	return response
 }
 
+func processResponse(config Config, query string, response *Response, opts ResponseOptions) {
+	// Display the response with colors
+	displayResponse(response)
+
+	// Check for dangerous commands
+	if isDangerous(response.Command) {
+		color.Yellow("\n⚠️  WARNING: This command may be dangerous!")
+		color.Yellow("Please review carefully before executing.")
+	}
+
+	// Save to history
+	saveToHistory(config, query, response.FullText)
+
+	// Copy to clipboard if requested
+	if opts.CopyToClipboard && response.Command != "" {
+		if err := clipboard.WriteAll(response.Command); err == nil {
+			color.Cyan("\n📋 Command copied to clipboard!")
+		}
+	}
+
+	// Execute if requested
+	if opts.Execute && response.Command != "" {
+		executeCommand(response.Command)
+	}
+
+	// Suggest alias for complex commands
+	if shouldSuggestAlias(response.Command) {
+		suggestAlias(query, response.Command)
+	}
+}
+
 func displayResponse(response *Response) {
 	// Color setup
 	green := color.New(color.FgGreen, color.Bold)
@@ -405,8 +495,7 @@ func displayResponse(response *Response) {
 
 func isDangerous(command string) bool {
 	for _, pattern := range dangerousPatterns {
-		matched, _ := regexp.MatchString(pattern, command)
-		if matched {
+		if pattern.MatchString(command) {
 			return true
 		}
 	}
@@ -416,13 +505,18 @@ func isDangerous(command string) bool {
 func saveToHistory(config Config, query, response string) {
 	f, err := os.OpenFile(config.HistoryFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
+		if config.Verbose {
+			color.Yellow("Warning: Could not save to history: %v", err)
+		}
 		return
 	}
 	defer f.Close()
 
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	entry := fmt.Sprintf("[%s] %s\n%s\n---\n", timestamp, query, response)
-	f.WriteString(entry)
+	if _, err := f.WriteString(entry); err != nil && config.Verbose {
+		color.Yellow("Warning: Could not write to history: %v", err)
+	}
 }
 
 func executeCommand(command string) {
@@ -451,8 +545,8 @@ func executeCommand(command string) {
 }
 
 func shouldSuggestAlias(command string) bool {
-	// Suggest alias for commands longer than 40 chars or with complex pipes
-	return len(command) > 40 || strings.Count(command, "|") > 1
+	// Suggest alias for commands longer than threshold or with complex pipes
+	return len(command) > aliasLengthThreshold || strings.Count(command, "|") > aliasPipeThreshold
 }
 
 func suggestAlias(query, command string) {
@@ -474,7 +568,7 @@ func generateAliasName(query string) string {
 	}
 
 	name := strings.Join(words, "")
-	name = regexp.MustCompile(`[^a-zA-Z0-9]`).ReplaceAllString(name, "")
+	name = nonAlphanumericRegex.ReplaceAllString(name, "")
 	name = strings.ToLower(name)
 
 	return name
