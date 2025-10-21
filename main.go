@@ -250,12 +250,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Process the response
+	// Handle the response
 	opts := ResponseOptions{
 		CopyToClipboard: *copyFlag,
 		Execute:         *executeFlag,
 	}
-	processResponse(config, query, response, opts)
+	handleResponse(config, query, response, opts)
 }
 
 func setupConfig(verbose bool) Config {
@@ -414,37 +414,61 @@ tar -czf archive.tar.gz directory/
 (Creates a compressed tarball of the directory)`, platform, platform)
 }
 
+// parseResponse extracts the command and explanation from Claude's response.
+// The expected format is:
+//   - First non-empty line: the actual command
+//   - Remaining lines: explanation/context
 func parseResponse(text string) *Response {
 	lines := strings.Split(text, "\n")
 	response := &Response{
 		FullText: text,
 	}
 
-	// Try to find the first line that looks like a command
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
+	// Filter out empty lines first to simplify parsing
+	var nonEmptyLines []string
+	for _, line := range lines {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			nonEmptyLines = append(nonEmptyLines, trimmed)
 		}
+	}
 
-		// First non-empty line is likely the command
-		if response.Command == "" {
-			response.Command = line
-			continue
-		}
+	// First non-empty line is the command
+	if len(nonEmptyLines) > 0 {
+		response.Command = nonEmptyLines[0]
+	}
 
-		// Rest is explanation
-		if i < len(lines) {
-			response.Explanation = strings.TrimSpace(strings.Join(lines[i:], "\n"))
-			break
-		}
+	// Remaining lines are the explanation
+	if len(nonEmptyLines) > 1 {
+		response.Explanation = strings.Join(nonEmptyLines[1:], "\n")
 	}
 
 	return response
 }
 
-func processResponse(config Config, query string, response *Response, opts ResponseOptions) {
-	// Display the response with colors
+func displayResponse(response *Response) {
+	// Color setup
+	green := color.New(color.FgGreen, color.Bold)
+	white := color.New(color.FgHiWhite)
+
+	if response.Command != "" {
+		// Display command in green
+		green.Println(response.Command)
+
+		// Display explanation in white if present
+		if response.Explanation != "" {
+			white.Println(response.Explanation)
+		}
+	} else {
+		// If we couldn't parse it, just show the full response
+		fmt.Println(response.FullText)
+	}
+}
+
+// handleResponse processes a response with all requested options.
+// This consolidates post-processing logic: display, safety checks, history logging,
+// clipboard copying, execution, and alias suggestions.
+func handleResponse(config Config, query string, response *Response, opts ResponseOptions) {
+	// Display the response
 	displayResponse(response)
 
 	// Check for dangerous commands
@@ -474,25 +498,8 @@ func processResponse(config Config, query string, response *Response, opts Respo
 	}
 }
 
-func displayResponse(response *Response) {
-	// Color setup
-	green := color.New(color.FgGreen, color.Bold)
-	white := color.New(color.FgHiWhite)
-
-	if response.Command != "" {
-		// Display command in green
-		green.Println(response.Command)
-
-		// Display explanation in white if present
-		if response.Explanation != "" {
-			white.Println(response.Explanation)
-		}
-	} else {
-		// If we couldn't parse it, just show the full response
-		fmt.Println(response.FullText)
-	}
-}
-
+// isDangerous checks if a command matches any dangerous patterns.
+// Uses pre-compiled regex patterns for efficiency.
 func isDangerous(command string) bool {
 	for _, pattern := range dangerousPatterns {
 		if pattern.MatchString(command) {
@@ -502,11 +509,13 @@ func isDangerous(command string) bool {
 	return false
 }
 
+// saveToHistory appends a query and response to the history file.
+// Logs warnings in verbose mode if saving fails.
 func saveToHistory(config Config, query, response string) {
 	f, err := os.OpenFile(config.HistoryFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		if config.Verbose {
-			color.Yellow("Warning: Could not save to history: %v", err)
+			color.Yellow("Warning: Could not open history file: %v", err)
 		}
 		return
 	}
@@ -514,8 +523,15 @@ func saveToHistory(config Config, query, response string) {
 
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	entry := fmt.Sprintf("[%s] %s\n%s\n---\n", timestamp, query, response)
-	if _, err := f.WriteString(entry); err != nil && config.Verbose {
-		color.Yellow("Warning: Could not write to history: %v", err)
+	if _, err := f.WriteString(entry); err != nil {
+		if config.Verbose {
+			color.Yellow("Warning: Could not write to history file: %v", err)
+		}
+		return
+	}
+
+	if config.Verbose {
+		color.Cyan("Saved to history: %s", config.HistoryFile)
 	}
 }
 
@@ -561,17 +577,39 @@ func suggestAlias(query, command string) {
 }
 
 func generateAliasName(query string) string {
-	// Create a simple alias name from the query
+	// Create a simple alias name from the query (max 3 words)
 	words := strings.Fields(query)
 	if len(words) > 3 {
 		words = words[:3]
 	}
 
+	// Join and sanitize to alphanumeric only
 	name := strings.Join(words, "")
 	name = nonAlphanumericRegex.ReplaceAllString(name, "")
-	name = strings.ToLower(name)
+	return strings.ToLower(name)
+}
 
-	return name
+// parseInteractiveLine extracts query and flags from an interactive line.
+// Supports inline flags: -c (copy), -x (execute), -e (examples)
+func parseInteractiveLine(line string) (query string, opts ResponseOptions, showExamples bool) {
+	parts := strings.Fields(line)
+	var queryParts []string
+
+	for _, part := range parts {
+		switch part {
+		case "-c":
+			opts.CopyToClipboard = true
+		case "-x":
+			opts.Execute = true
+		case "-e":
+			showExamples = true
+		default:
+			queryParts = append(queryParts, part)
+		}
+	}
+
+	query = strings.Join(queryParts, " ")
+	return
 }
 
 func runInteractiveMode(config Config) {
@@ -602,63 +640,22 @@ func runInteractiveMode(config Config) {
 			break
 		}
 
-		// Parse flags from the line
-		parts := strings.Fields(line)
-		copyFlag := false
-		executeFlag := false
-		examplesFlag := false
-		var queryParts []string
-
-		for _, part := range parts {
-			switch part {
-			case "-c":
-				copyFlag = true
-			case "-x":
-				executeFlag = true
-			case "-e":
-				examplesFlag = true
-			default:
-				queryParts = append(queryParts, part)
-			}
-		}
-
-		if len(queryParts) == 0 {
+		// Parse query and flags
+		query, opts, showExamples := parseInteractiveLine(line)
+		if query == "" {
 			continue
 		}
 
-		query := strings.Join(queryParts, " ")
-
 		// Run the query
-		response, err := runQuery(config, query, examplesFlag)
+		response, err := runQuery(config, query, showExamples)
 		if err != nil {
 			color.Red("Error: %v", err)
 			continue
 		}
 
-		// Display the response
+		// Handle the response
 		fmt.Println()
-		displayResponse(response)
-
-		// Check for dangerous commands
-		if isDangerous(response.Command) {
-			color.Yellow("\n⚠️  WARNING: This command may be dangerous!")
-		}
-
-		// Save to history
-		saveToHistory(config, query, response.FullText)
-
-		// Copy to clipboard if requested
-		if copyFlag && response.Command != "" {
-			if err := clipboard.WriteAll(response.Command); err == nil {
-				color.Cyan("📋 Copied to clipboard!")
-			}
-		}
-
-		// Execute if requested
-		if executeFlag && response.Command != "" {
-			executeCommand(response.Command)
-		}
-
+		handleResponse(config, query, response, opts)
 		fmt.Println()
 	}
 }
