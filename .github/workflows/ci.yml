@@ -38,7 +38,7 @@ jobs:
         run: go build -v -o howtfdoi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: howtfdoi-linux
           path: howtfdoi
@@ -95,7 +95,7 @@ jobs:
           go build -v -o howtfdoi-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: howtfdoi-${{ matrix.os }}-${{ matrix.arch }}
           path: howtfdoi-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}
