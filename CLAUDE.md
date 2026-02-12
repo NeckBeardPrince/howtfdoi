@@ -25,14 +25,14 @@ go install
 ./howtfdoi -c list files          # Copy to clipboard
 ./howtfdoi -e tar                 # Show examples
 ./howtfdoi -x list files          # Execute with confirmation
-./howtfdoi -v find large files    # Verbose mode (shows data dir, history saves)
+./howtfdoi -v find large files    # Verbose mode (shows data dir, config file, history saves)
 
 # Test version and help
 ./howtfdoi --version              # Show version info
 ./howtfdoi --help                 # Show usage, flags, and examples
 
 # Test interactive mode
-./howtfdoi                        # Launches REPL
+./howtfdoi                        # Launches REPL (or first-run setup if no API key)
 
 # Test with OpenAI/ChatGPT
 export OPENAI_API_KEY="your-key"
@@ -40,10 +40,15 @@ HOWTFDOI_AI_PROVIDER=openai ./howtfdoi list files
 HOWTFDOI_AI_PROVIDER=chatgpt ./howtfdoi list files  # chatgpt is an alias for openai
 
 # Check history (XDG Base Directory compliant)
-cat ~/.local/state/howtfdoi/.howtfdoi_history
+cat ~/.local/state/howtfdoi/history.log
 
-# Test with custom XDG_STATE_HOME
+# Test with custom XDG directories
 XDG_STATE_HOME=/tmp/test ./howtfdoi list files
+XDG_CONFIG_HOME=/tmp/testconfig ./howtfdoi list files
+
+# Test first-run setup (delete config file, unset env vars)
+rm ~/.config/howtfdoi/howtfdoi.yaml
+ANTHROPIC_API_KEY="" OPENAI_API_KEY="" ./howtfdoi list files
 ```
 
 ## Architecture
@@ -55,22 +60,39 @@ The entire application is in `main.go` - this is intentional for simplicity and 
 ### Core Flow
 
 1. **Argument Parsing**: Flags (`-c`, `-e`, `-x`, `-v`) parsed with `flag` package
-2. **Provider Selection**: Determines AI provider (Anthropic/Claude or OpenAI/ChatGPT) based on `HOWTFDOI_AI_PROVIDER` env var and available API keys
-3. **Query Processing**: Natural language query sent to selected AI provider via provider abstraction
-4. **Response Parsing**: Separates command from explanation for color formatting
-5. **Post-Processing**: Consolidated in `handleResponse()` - safety checks, history logging, clipboard copy, execution, alias suggestions
+2. **Config Loading**: Loads config file, resolves provider/API key (env vars > config file > first-run setup)
+3. **Provider Selection**: Determines AI provider (Anthropic/Claude or OpenAI/ChatGPT)
+4. **Query Processing**: Natural language query sent to selected AI provider via provider abstraction
+5. **Response Parsing**: Separates command from explanation for color formatting
+6. **Post-Processing**: Consolidated in `handleResponse()` - safety checks, history logging, clipboard copy, execution
 
 ### Key Components
 
-**Config Management** (`setupConfig`, `getDataDirectory`)
+**Config Management** (`setupConfig`, `getDataDirectory`, `getConfigDirectory`)
 
-- Provider selection via `HOWTFDOI_AI_PROVIDER` env var (anthropic, openai, chatgpt)
-- API key from `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` env var depending on provider
-- Auto-detects provider if `HOWTFDOI_AI_PROVIDER` not set (checks which API key is available)
-- **XDG Base Directory support**: History file at `$XDG_STATE_HOME/howtfdoi/.howtfdoi_history` (or `~/.local/state/howtfdoi/.howtfdoi_history`)
+- **Config file**: YAML at `$XDG_CONFIG_HOME/howtfdoi/howtfdoi.yaml` (default `~/.config/howtfdoi/howtfdoi.yaml`)
+- **Priority order**: Environment variables > config file values > defaults
+- Provider selection via `HOWTFDOI_AI_PROVIDER` env var or `provider` in config file
+- API key from env var (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) or config file
+- Auto-detects provider if not explicitly set (checks which API key is available)
+- **XDG Base Directory support**: History at `$XDG_STATE_HOME/howtfdoi/history.log` (default `~/.local/state/howtfdoi/history.log`)
 - Platform detection via `runtime.GOOS`
 - Verbose mode flag controls logging verbosity
-- Directory auto-creation on first run
+- Both config and state directories auto-created on first run
+
+**Config File** (`FileConfig`, `loadConfigFile`, `saveConfigFile`)
+
+- `FileConfig` struct with YAML tags for serialization
+- `loadConfigFile()`: Reads and parses YAML config, returns zero-value if missing
+- `saveConfigFile()`: Writes config with warning header, creates `.gitignore` alongside to prevent accidental commits
+- Config file written with `0600` permissions, config directory with `0700`
+
+**First-Run Setup** (`runFirstTimeSetup`)
+
+- Triggered when no API key is found and stdin is a terminal (`isatty` check)
+- Prompts for provider selection (Anthropic or OpenAI)
+- Provides clickable links to developer dashboards for API key generation
+- Saves configuration via `saveConfigFile()`
 
 **Provider Abstraction** (`Provider`, `AnthropicProvider`, `OpenAIProvider`)
 
@@ -94,7 +116,7 @@ The entire application is in `main.go` - this is intentional for simplicity and 
 **Response Handling** (`handleResponse`)
 
 - Centralized post-processing function (reduces code duplication)
-- Handles: display, dangerous command checks, history logging, clipboard copy, execution, alias suggestions
+- Handles: display, dangerous command checks, history logging, clipboard copy, execution
 - Uses `ResponseOptions` struct for clean flag passing
 
 **Response Parsing** (`parseResponse`, `parseInteractiveLine`)
@@ -130,27 +152,45 @@ Both prompts include platform info and are optimized for brevity. When using Ant
 - `github.com/fatih/color` - Terminal colors
 - `github.com/atotto/clipboard` - Cross-platform clipboard
 - `github.com/chzyer/readline` - Interactive REPL
+- `github.com/mattn/go-isatty` - Terminal detection for first-run setup
+- `gopkg.in/yaml.v3` - YAML config file parsing
 
 ## Environment Requirements
 
-- `ANTHROPIC_API_KEY` environment variable (required for Claude/Anthropic)
-- `OPENAI_API_KEY` environment variable (required for ChatGPT/OpenAI)
+- `ANTHROPIC_API_KEY` environment variable or config file entry (required for Claude/Anthropic)
+- `OPENAI_API_KEY` environment variable or config file entry (required for ChatGPT/OpenAI)
 - `HOWTFDOI_AI_PROVIDER` environment variable (optional, defaults to anthropic)
+- `XDG_CONFIG_HOME` to override config directory (default: `~/.config`)
+- `XDG_STATE_HOME` to override state directory (default: `~/.local/state`)
 - Terminal with ANSI color support for best experience
 - Clipboard support requires platform-specific tools (xclip/xsel on Linux)
+
+## Config File
+
+Located at `$XDG_CONFIG_HOME/howtfdoi/howtfdoi.yaml` (default `~/.config/howtfdoi/howtfdoi.yaml`):
+
+```yaml
+# WARNING: This file contains API keys. Do NOT commit this file to git.
+# Add this file to your .gitignore if it is inside a repository.
+provider: anthropic
+anthropic_api_key: sk-ant-...
+openai_api_key: sk-...
+```
+
+A `.gitignore` is automatically created in the config directory to ignore `howtfdoi.yaml`.
 
 ## Feature Flags
 
 - `-c` Copy command to clipboard
 - `-e` Show multiple examples (changes prompt strategy)
 - `-x` Execute command with confirmation prompt
-- `-v` Enable verbose mode (shows data directory location, history save confirmations)
+- `-v` Enable verbose mode (shows data directory, config file path, AI provider, history save confirmations)
 - `--version` Show version information and repository URL
 - `--help` / `-h` Show usage, available flags, and examples
 
 ## History Format
 
-Stored at `$XDG_STATE_HOME/howtfdoi/.howtfdoi_history` (or `~/.local/state/howtfdoi/.howtfdoi_history` by default):
+Stored at `$XDG_STATE_HOME/howtfdoi/history.log` (or `~/.local/state/howtfdoi/history.log` by default):
 
 ```
 [YYYY-MM-DD HH:MM:SS] query text
@@ -193,10 +233,11 @@ Recent refactoring improvements include:
 - Centralized response handling reduces code duplication
 
 **Code Organization:**
-- Constants extracted for magic numbers (`maxTokens`, `aliasLengthThreshold`, etc.)
+- Constants extracted for magic numbers (`maxTokens`, etc.)
 - `handleResponse()` consolidates post-processing logic
 - `parseInteractiveLine()` separates parsing from interactive loop
-- `getDataDirectory()` encapsulates XDG directory logic
+- `getDataDirectory()` encapsulates XDG state directory logic
+- `getConfigDirectory()` encapsulates XDG config directory logic
 
 **Error Handling:**
 - Explicit error handling with clear user messages
