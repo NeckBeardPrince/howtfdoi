@@ -235,7 +235,8 @@ type LMStudioProvider struct {
 // NewLMStudioProvider creates a new LM Studio provider
 func NewLMStudioProvider(baseURL, model string) *LMStudioProvider {
 	// Create client config with custom base URL
-	// LM Studio doesn't require an API key, so we pass an empty string
+	// Note: LM Studio doesn't require an API key. The OpenAI SDK requires an empty string
+	// as the API key parameter. Our Config struct uses apiKeyNotNeeded as a placeholder.
 	config := openai.DefaultConfig("")
 	config.BaseURL = baseURL
 
@@ -391,7 +392,8 @@ func main() {
 	handleResponse(config, query, response, opts)
 }
 
-// resolveLMStudioConfig resolves LM Studio configuration from environment variables, config file, and defaults
+// resolveLMStudioConfig resolves LM Studio configuration from environment variables, config file, and defaults.
+// Returns (baseURL, model) with defaults applied if not configured.
 func resolveLMStudioConfig(fileConfig FileConfig) (baseURL, model string) {
 	// Get base URL from env or config, default to localhost:1234
 	baseURL = os.Getenv("LMSTUDIO_BASE_URL")
@@ -666,7 +668,7 @@ func runFirstTimeSetup() (FileConfig, error) {
 	} else if fc.Provider == providerLMStudio {
 		fmt.Println("\nLM Studio runs locally and doesn't require an API key.")
 		fmt.Println("Make sure LM Studio is running and has a model loaded.")
-		fmt.Printf("Enter LM Studio base URL [%s]: ", defaultLMStudioBaseURL)
+		fmt.Printf("Enter LM Studio server base URL [%s]: ", defaultLMStudioBaseURL)
 		baseURL, _ := reader.ReadString('\n')
 		baseURL = strings.TrimSpace(baseURL)
 		if baseURL == "" {
