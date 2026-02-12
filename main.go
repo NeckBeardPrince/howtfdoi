@@ -42,6 +42,7 @@ const (
 	providerAnthropic = "anthropic"
 	providerOpenAI    = "openai"
 	providerChatGPT   = "chatgpt" // alias for openai
+	providerLMStudio  = "lmstudio"
 )
 
 var (
@@ -77,18 +78,22 @@ var (
 
 // FileConfig holds configuration loaded from the YAML config file
 type FileConfig struct {
-	Provider     string `yaml:"provider,omitempty"`
-	AnthropicKey string `yaml:"anthropic_api_key,omitempty"`
-	OpenAIKey    string `yaml:"openai_api_key,omitempty"`
+	Provider        string `yaml:"provider,omitempty"`
+	AnthropicKey    string `yaml:"anthropic_api_key,omitempty"`
+	OpenAIKey       string `yaml:"openai_api_key,omitempty"`
+	LMStudioBaseURL string `yaml:"lmstudio_base_url,omitempty"`
+	LMStudioModel   string `yaml:"lmstudio_model,omitempty"`
 }
 
 // Config holds runtime configuration
 type Config struct {
-	APIKey      string
-	HistoryFile string
-	Platform    string
-	Verbose     bool
-	Provider    string // "anthropic" or "openai"
+	APIKey          string
+	HistoryFile     string
+	Platform        string
+	Verbose         bool
+	Provider        string // "anthropic", "openai", or "lmstudio"
+	LMStudioBaseURL string // Base URL for LM Studio (e.g., "http://localhost:1234/v1")
+	LMStudioModel   string // Model name for LM Studio
 }
 
 // Response holds the parsed response
@@ -215,6 +220,65 @@ func (p *OpenAIProvider) Query(ctx context.Context, systemPrompt, userQuery stri
 	return fullResponse.String(), nil
 }
 
+// LMStudioProvider implements Provider for LM Studio's local API (OpenAI-compatible)
+type LMStudioProvider struct {
+	client  *openai.Client
+	model   string
+	baseURL string
+}
+
+// NewLMStudioProvider creates a new LM Studio provider
+func NewLMStudioProvider(baseURL, model string) *LMStudioProvider {
+	// Create client config with custom base URL
+	config := openai.DefaultConfig("")
+	config.BaseURL = baseURL
+
+	return &LMStudioProvider{
+		client:  openai.NewClientWithConfig(config),
+		model:   model,
+		baseURL: baseURL,
+	}
+}
+
+// Query sends a query to LM Studio's API
+func (p *LMStudioProvider) Query(ctx context.Context, systemPrompt, userQuery string) (string, error) {
+	stream, err := p.client.CreateChatCompletionStream(ctx, openai.ChatCompletionRequest{
+		Model:     p.model,
+		MaxTokens: maxTokens,
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleSystem,
+				Content: systemPrompt,
+			},
+			{
+				Role:    openai.ChatMessageRoleUser,
+				Content: userQuery,
+			},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	defer stream.Close()
+
+	var fullResponse strings.Builder
+	for {
+		response, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+
+		if len(response.Choices) > 0 {
+			fullResponse.WriteString(response.Choices[0].Delta.Content)
+		}
+	}
+
+	return fullResponse.String(), nil
+}
+
 func main() {
 	// Customize help output to include version information
 	flag.Usage = func() {
@@ -226,8 +290,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "GETTING STARTED:\n")
 		fmt.Fprintf(os.Stderr, "  1. Run howtfdoi — first-time setup will prompt you for your API key.\n")
 		fmt.Fprintf(os.Stderr, "     Or set up manually via environment variable:\n")
-		fmt.Fprintf(os.Stderr, "     • For Claude:   export ANTHROPIC_API_KEY='your-key-here'\n")
-		fmt.Fprintf(os.Stderr, "     • For ChatGPT:  export OPENAI_API_KEY='your-key-here'\n\n")
+		fmt.Fprintf(os.Stderr, "     • For Claude:     export ANTHROPIC_API_KEY='your-key-here'\n")
+		fmt.Fprintf(os.Stderr, "     • For ChatGPT:    export OPENAI_API_KEY='your-key-here'\n")
+		fmt.Fprintf(os.Stderr, "     • For LM Studio:  export HOWTFDOI_AI_PROVIDER='lmstudio'\n\n")
 		fmt.Fprintf(os.Stderr, "  2. Ask a question:\n")
 		fmt.Fprintf(os.Stderr, "     howtfdoi compress a directory\n\n")
 
@@ -246,8 +311,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\nENVIRONMENT VARIABLES:\n")
 		fmt.Fprintf(os.Stderr, "  ANTHROPIC_API_KEY     Your Anthropic API key (get it at console.anthropic.com)\n")
 		fmt.Fprintf(os.Stderr, "  OPENAI_API_KEY        Your OpenAI API key (get it at platform.openai.com)\n")
-		fmt.Fprintf(os.Stderr, "  HOWTFDOI_AI_PROVIDER  Override provider choice: anthropic, openai, or chatgpt\n")
+		fmt.Fprintf(os.Stderr, "  HOWTFDOI_AI_PROVIDER  Override provider choice: anthropic, openai, chatgpt, or lmstudio\n")
 		fmt.Fprintf(os.Stderr, "                        (defaults to anthropic, or auto-detects from available keys)\n")
+		fmt.Fprintf(os.Stderr, "  LMSTUDIO_BASE_URL     LM Studio base URL (default: http://localhost:1234/v1)\n")
+		fmt.Fprintf(os.Stderr, "  LMSTUDIO_MODEL        LM Studio model name (default: local-model)\n")
 		fmt.Fprintf(os.Stderr, "  XDG_CONFIG_HOME       Override config directory (default: ~/.config)\n")
 		fmt.Fprintf(os.Stderr, "  XDG_STATE_HOME        Override state directory (default: ~/.local/state)\n")
 
@@ -278,8 +345,8 @@ func main() {
 	// Setup config
 	config := setupConfig(*verboseFlag)
 
-	// Check API key
-	if config.APIKey == "" {
+	// Check API key (LM Studio doesn't need an API key, it runs locally)
+	if config.APIKey == "" && config.Provider != providerLMStudio {
 		configPath := filepath.Join(getConfigDirectory(), configFileName)
 		if config.Provider == providerAnthropic {
 			color.Red("Error: No Anthropic API key found")
@@ -344,6 +411,8 @@ func setupConfig(verbose bool) Config {
 	// Priority: env var > config file > default (anthropic)
 	provider := strings.ToLower(os.Getenv("HOWTFDOI_AI_PROVIDER"))
 	var apiKey string
+	var lmStudioBaseURL string
+	var lmStudioModel string
 
 	switch provider {
 	case providerOpenAI, providerChatGPT:
@@ -357,6 +426,26 @@ func setupConfig(verbose bool) Config {
 		apiKey = os.Getenv("ANTHROPIC_API_KEY")
 		if apiKey == "" {
 			apiKey = fileConfig.AnthropicKey
+		}
+	case providerLMStudio:
+		provider = providerLMStudio
+		// LM Studio doesn't need an API key
+		apiKey = "not-needed"
+		// Get base URL from env or config, default to localhost:1234
+		lmStudioBaseURL = os.Getenv("LMSTUDIO_BASE_URL")
+		if lmStudioBaseURL == "" {
+			lmStudioBaseURL = fileConfig.LMStudioBaseURL
+		}
+		if lmStudioBaseURL == "" {
+			lmStudioBaseURL = "http://localhost:1234/v1"
+		}
+		// Get model from env or config, default to "local-model"
+		lmStudioModel = os.Getenv("LMSTUDIO_MODEL")
+		if lmStudioModel == "" {
+			lmStudioModel = fileConfig.LMStudioModel
+		}
+		if lmStudioModel == "" {
+			lmStudioModel = "local-model"
 		}
 	case "":
 		// No env var set — check config file provider, then auto-detect
@@ -372,6 +461,22 @@ func setupConfig(verbose bool) Config {
 			apiKey = os.Getenv("OPENAI_API_KEY")
 			if apiKey == "" {
 				apiKey = fileConfig.OpenAIKey
+			}
+		case providerLMStudio:
+			apiKey = "not-needed"
+			lmStudioBaseURL = os.Getenv("LMSTUDIO_BASE_URL")
+			if lmStudioBaseURL == "" {
+				lmStudioBaseURL = fileConfig.LMStudioBaseURL
+			}
+			if lmStudioBaseURL == "" {
+				lmStudioBaseURL = "http://localhost:1234/v1"
+			}
+			lmStudioModel = os.Getenv("LMSTUDIO_MODEL")
+			if lmStudioModel == "" {
+				lmStudioModel = fileConfig.LMStudioModel
+			}
+			if lmStudioModel == "" {
+				lmStudioModel = "local-model"
 			}
 		default:
 			provider = providerAnthropic
@@ -410,6 +515,16 @@ func setupConfig(verbose bool) Config {
 		provider = fc.Provider
 		if provider == providerOpenAI {
 			apiKey = fc.OpenAIKey
+		} else if provider == providerLMStudio {
+			apiKey = "not-needed"
+			lmStudioBaseURL = fc.LMStudioBaseURL
+			if lmStudioBaseURL == "" {
+				lmStudioBaseURL = "http://localhost:1234/v1"
+			}
+			lmStudioModel = fc.LMStudioModel
+			if lmStudioModel == "" {
+				lmStudioModel = "local-model"
+			}
 		} else {
 			provider = providerAnthropic
 			apiKey = fc.AnthropicKey
@@ -418,14 +533,20 @@ func setupConfig(verbose bool) Config {
 
 	if verbose {
 		color.Cyan("Using AI provider: %s", provider)
+		if provider == providerLMStudio {
+			color.Cyan("LM Studio base URL: %s", lmStudioBaseURL)
+			color.Cyan("LM Studio model: %s", lmStudioModel)
+		}
 	}
 
 	return Config{
-		APIKey:      apiKey,
-		HistoryFile: filepath.Join(dataDir, historyFileName),
-		Platform:    runtime.GOOS,
-		Verbose:     verbose,
-		Provider:    provider,
+		APIKey:          apiKey,
+		HistoryFile:     filepath.Join(dataDir, historyFileName),
+		Platform:        runtime.GOOS,
+		Verbose:         verbose,
+		Provider:        provider,
+		LMStudioBaseURL: lmStudioBaseURL,
+		LMStudioModel:   lmStudioModel,
 	}
 }
 
@@ -523,7 +644,8 @@ func runFirstTimeSetup() (FileConfig, error) {
 	fmt.Println("Which AI provider would you like to use?")
 	fmt.Println("  1. Anthropic (Claude) — default")
 	fmt.Println("  2. OpenAI (ChatGPT)")
-	fmt.Print("Enter 1 or 2 [1]: ")
+	fmt.Println("  3. LM Studio (Local)")
+	fmt.Print("Enter 1, 2, or 3 [1]: ")
 
 	choice, _ := reader.ReadString('\n')
 	choice = strings.TrimSpace(choice)
@@ -532,11 +654,13 @@ func runFirstTimeSetup() (FileConfig, error) {
 	switch choice {
 	case "2":
 		fc.Provider = providerOpenAI
+	case "3":
+		fc.Provider = providerLMStudio
 	default:
 		fc.Provider = providerAnthropic
 	}
 
-	// Prompt for API key with a link to the developer dashboard
+	// Prompt for API key or LM Studio config
 	if fc.Provider == providerOpenAI {
 		fmt.Println("\nGet your API key at: https://platform.openai.com/api-keys")
 		fmt.Print("Enter your OpenAI API key: ")
@@ -544,6 +668,25 @@ func runFirstTimeSetup() (FileConfig, error) {
 		fc.OpenAIKey = strings.TrimSpace(key)
 		if fc.OpenAIKey == "" {
 			return fc, fmt.Errorf("no API key provided")
+		}
+	} else if fc.Provider == providerLMStudio {
+		fmt.Println("\nLM Studio runs locally and doesn't require an API key.")
+		fmt.Println("Make sure LM Studio is running and has a model loaded.")
+		fmt.Print("Enter LM Studio base URL [http://localhost:1234/v1]: ")
+		baseURL, _ := reader.ReadString('\n')
+		baseURL = strings.TrimSpace(baseURL)
+		if baseURL == "" {
+			fc.LMStudioBaseURL = "http://localhost:1234/v1"
+		} else {
+			fc.LMStudioBaseURL = baseURL
+		}
+		fmt.Print("Enter model name [local-model]: ")
+		model, _ := reader.ReadString('\n')
+		model = strings.TrimSpace(model)
+		if model == "" {
+			fc.LMStudioModel = "local-model"
+		} else {
+			fc.LMStudioModel = model
 		}
 	} else {
 		fmt.Println("\nGet your API key at: https://console.anthropic.com/settings/keys")
@@ -577,6 +720,8 @@ func runQuery(config Config, query string, showExamples bool) (*Response, error)
 		provider = NewOpenAIProvider(config.APIKey)
 	case providerAnthropic:
 		provider = NewAnthropicProvider(config.APIKey)
+	case providerLMStudio:
+		provider = NewLMStudioProvider(config.LMStudioBaseURL, config.LMStudioModel)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", config.Provider)
 	}
