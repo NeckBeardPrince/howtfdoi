@@ -20,7 +20,9 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/chzyer/readline"
 	"github.com/fatih/color"
+	"github.com/mattn/go-isatty"
 	openai "github.com/sashabaranov/go-openai"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -29,12 +31,11 @@ const (
 	gptModel    = "gpt-4o-mini"
 	maxTokens   = 1024
 
-	// UI thresholds
-	aliasLengthThreshold = 40
-	aliasPipeThreshold   = 1
-
 	// History file name
-	historyFileName = ".howtfdoi_history"
+	historyFileName = "history.log"
+
+	// Config file name
+	configFileName = "howtfdoi.yaml"
 
 	// Provider types
 	providerAnthropic = "anthropic"
@@ -60,10 +61,14 @@ var (
 		regexp.MustCompile(`>\s*/dev/sd`),
 		regexp.MustCompile(`mv\s+.*\s+/dev/null`),
 	}
-
-	// Regex for sanitizing alias names (compiled once at startup)
-	nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9]`)
 )
+
+// FileConfig holds configuration loaded from the YAML config file
+type FileConfig struct {
+	Provider     string `yaml:"provider,omitempty"`
+	AnthropicKey string `yaml:"anthropic_api_key,omitempty"`
+	OpenAIKey    string `yaml:"openai_api_key,omitempty"`
+}
 
 // Config holds runtime configuration
 type Config struct {
@@ -207,7 +212,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Ask CLI questions in plain English and get instant answers powered by AI.\n\n")
 
 		fmt.Fprintf(os.Stderr, "GETTING STARTED:\n")
-		fmt.Fprintf(os.Stderr, "  1. Set up your API key (choose one):\n")
+		fmt.Fprintf(os.Stderr, "  1. Run howtfdoi — first-time setup will prompt you for your API key.\n")
+		fmt.Fprintf(os.Stderr, "     Or set up manually via environment variable:\n")
 		fmt.Fprintf(os.Stderr, "     • For Claude:   export ANTHROPIC_API_KEY='your-key-here'\n")
 		fmt.Fprintf(os.Stderr, "     • For ChatGPT:  export OPENAI_API_KEY='your-key-here'\n\n")
 		fmt.Fprintf(os.Stderr, "  2. Ask a question:\n")
@@ -220,11 +226,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "FLAGS:\n")
 		flag.PrintDefaults()
 
+		fmt.Fprintf(os.Stderr, "\nCONFIG FILE:\n")
+		fmt.Fprintf(os.Stderr, "  %s\n", filepath.Join(getConfigDirectory(), configFileName))
+		fmt.Fprintf(os.Stderr, "  API keys and provider preference can be stored in this YAML file.\n")
+		fmt.Fprintf(os.Stderr, "  Environment variables take precedence over config file values.\n")
+
 		fmt.Fprintf(os.Stderr, "\nENVIRONMENT VARIABLES:\n")
 		fmt.Fprintf(os.Stderr, "  ANTHROPIC_API_KEY     Your Anthropic API key (get it at console.anthropic.com)\n")
 		fmt.Fprintf(os.Stderr, "  OPENAI_API_KEY        Your OpenAI API key (get it at platform.openai.com)\n")
 		fmt.Fprintf(os.Stderr, "  HOWTFDOI_AI_PROVIDER  Override provider choice: anthropic, openai, or chatgpt\n")
 		fmt.Fprintf(os.Stderr, "                        (defaults to anthropic, or auto-detects from available keys)\n")
+		fmt.Fprintf(os.Stderr, "  XDG_CONFIG_HOME       Override config directory (default: ~/.config)\n")
+		fmt.Fprintf(os.Stderr, "  XDG_STATE_HOME        Override state directory (default: ~/.local/state)\n")
 
 		fmt.Fprintf(os.Stderr, "\nEXAMPLES:\n")
 		fmt.Fprintf(os.Stderr, "  howtfdoi list files\n")
@@ -255,12 +268,15 @@ func main() {
 
 	// Check API key
 	if config.APIKey == "" {
+		configPath := filepath.Join(getConfigDirectory(), configFileName)
 		if config.Provider == providerAnthropic {
-			color.Red("Error: ANTHROPIC_API_KEY environment variable not set")
-			fmt.Fprintln(os.Stderr, "Set it with: export ANTHROPIC_API_KEY='your-api-key'")
+			color.Red("Error: No Anthropic API key found")
+			fmt.Fprintf(os.Stderr, "Set it via environment variable: export ANTHROPIC_API_KEY='your-api-key'\n")
+			fmt.Fprintf(os.Stderr, "Or add it to your config file: %s\n", configPath)
 		} else {
-			color.Red("Error: OPENAI_API_KEY environment variable not set")
-			fmt.Fprintln(os.Stderr, "Set it with: export OPENAI_API_KEY='your-api-key'")
+			color.Red("Error: No OpenAI API key found")
+			fmt.Fprintf(os.Stderr, "Set it via environment variable: export OPENAI_API_KEY='your-api-key'\n")
+			fmt.Fprintf(os.Stderr, "Or add it to your config file: %s\n", configPath)
 		}
 		os.Exit(1)
 	}
@@ -292,20 +308,28 @@ func main() {
 
 func setupConfig(verbose bool) Config {
 	dataDir := getDataDirectory()
+	configDir := getConfigDirectory()
 
-	// Ensure the data directory exists
+	// Ensure both directories exist on first run
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		// If we can't create the directory, fail explicitly
 		color.Red("Error: Could not create data directory at %s: %v", dataDir, err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		color.Red("Error: Could not create config directory at %s: %v", configDir, err)
 		os.Exit(1)
 	}
 
 	if verbose {
 		color.Cyan("Using data directory: %s", dataDir)
+		color.Cyan("Using config file: %s", filepath.Join(configDir, configFileName))
 	}
 
+	// Load config file
+	fileConfig := loadConfigFile()
+
 	// Determine which provider to use
-	// Check HOWTFDOI_AI_PROVIDER env var first, then fall back to checking which API key is set
+	// Priority: env var > config file > default (anthropic)
 	provider := strings.ToLower(os.Getenv("HOWTFDOI_AI_PROVIDER"))
 	var apiKey string
 
@@ -313,19 +337,71 @@ func setupConfig(verbose bool) Config {
 	case providerOpenAI, providerChatGPT:
 		provider = providerOpenAI
 		apiKey = os.Getenv("OPENAI_API_KEY")
-	case providerAnthropic, "claude", "":
-		// Default to Anthropic if not specified or if "claude" is specified
+		if apiKey == "" {
+			apiKey = fileConfig.OpenAIKey
+		}
+	case providerAnthropic, "claude":
 		provider = providerAnthropic
 		apiKey = os.Getenv("ANTHROPIC_API_KEY")
-		// If Anthropic key not set but OpenAI key is, switch to OpenAI
-		if apiKey == "" && os.Getenv("OPENAI_API_KEY") != "" {
-			provider = providerOpenAI
+		if apiKey == "" {
+			apiKey = fileConfig.AnthropicKey
+		}
+	case "":
+		// No env var set — check config file provider, then auto-detect
+		if fileConfig.Provider != "" {
+			provider = strings.ToLower(fileConfig.Provider)
+			if provider == providerChatGPT {
+				provider = providerOpenAI
+			}
+		}
+
+		switch provider {
+		case providerOpenAI:
 			apiKey = os.Getenv("OPENAI_API_KEY")
+			if apiKey == "" {
+				apiKey = fileConfig.OpenAIKey
+			}
+		default:
+			provider = providerAnthropic
+			apiKey = os.Getenv("ANTHROPIC_API_KEY")
+			if apiKey == "" {
+				apiKey = fileConfig.AnthropicKey
+			}
+			// If still no Anthropic key, try OpenAI from env or config
+			if apiKey == "" {
+				if envKey := os.Getenv("OPENAI_API_KEY"); envKey != "" {
+					provider = providerOpenAI
+					apiKey = envKey
+				} else if fileConfig.OpenAIKey != "" {
+					provider = providerOpenAI
+					apiKey = fileConfig.OpenAIKey
+				}
+			}
 		}
 	default:
 		color.Yellow("Warning: Unknown HOWTFDOI_AI_PROVIDER '%s', defaulting to Anthropic", provider)
 		provider = providerAnthropic
 		apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		if apiKey == "" {
+			apiKey = fileConfig.AnthropicKey
+		}
+	}
+
+	// If still no API key and stdin is a terminal, run first-time setup
+	if apiKey == "" && isatty.IsTerminal(os.Stdin.Fd()) {
+		fc, err := runFirstTimeSetup()
+		if err != nil {
+			color.Red("Error during setup: %v", err)
+			os.Exit(1)
+		}
+		fileConfig = fc
+		provider = fc.Provider
+		if provider == providerOpenAI {
+			apiKey = fc.OpenAIKey
+		} else {
+			provider = providerAnthropic
+			apiKey = fc.AnthropicKey
+		}
 	}
 
 	if verbose {
@@ -357,6 +433,128 @@ func getDataDirectory() string {
 	}
 
 	return filepath.Join(homeDir, ".local", "state", "howtfdoi")
+}
+
+// getConfigDirectory returns the appropriate config directory following XDG Base Directory spec
+func getConfigDirectory() string {
+	if xdgConfigHome := os.Getenv("XDG_CONFIG_HOME"); xdgConfigHome != "" {
+		return filepath.Join(xdgConfigHome, "howtfdoi")
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		color.Red("Error: Could not determine home directory: %v", err)
+		os.Exit(1)
+	}
+
+	return filepath.Join(homeDir, ".config", "howtfdoi")
+}
+
+// loadConfigFile reads and parses the YAML config file.
+// Returns a zero-value FileConfig if the file doesn't exist.
+func loadConfigFile() FileConfig {
+	configPath := filepath.Join(getConfigDirectory(), configFileName)
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return FileConfig{}
+	}
+
+	var fc FileConfig
+	if err := yaml.Unmarshal(data, &fc); err != nil {
+		return FileConfig{}
+	}
+	return fc
+}
+
+// saveConfigFile writes the FileConfig to the YAML config file.
+func saveConfigFile(fc FileConfig) error {
+	configDir := getConfigDirectory()
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		return fmt.Errorf("could not create config directory: %w", err)
+	}
+
+	data, err := yaml.Marshal(&fc)
+	if err != nil {
+		return fmt.Errorf("could not marshal config: %w", err)
+	}
+
+	header := "# WARNING: This file contains API keys. Do NOT commit this file to git.\n" +
+		"# Add this file to your .gitignore if it is inside a repository.\n\n"
+
+	configPath := filepath.Join(configDir, configFileName)
+	if err := os.WriteFile(configPath, []byte(header+string(data)), 0600); err != nil {
+		return fmt.Errorf("could not write config file: %w", err)
+	}
+
+	// Write a .gitignore to protect against accidental commits
+	gitignorePath := filepath.Join(configDir, ".gitignore")
+	if _, err := os.Stat(gitignorePath); os.IsNotExist(err) {
+		gitignoreContent := "# Ignore config file containing API keys\n" + configFileName + "\n"
+		if err := os.WriteFile(gitignorePath, []byte(gitignoreContent), 0644); err != nil {
+			// Non-fatal — warn but don't fail
+			fmt.Fprintf(os.Stderr, "Warning: Could not create .gitignore in config directory: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+// runFirstTimeSetup interactively prompts the user to configure their API key and provider.
+func runFirstTimeSetup() (FileConfig, error) {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Println()
+	color.Cyan("Welcome to howtfdoi! Let's set up your configuration.")
+	fmt.Println()
+
+	// Prompt for provider
+	fmt.Println("Which AI provider would you like to use?")
+	fmt.Println("  1. Anthropic (Claude) — default")
+	fmt.Println("  2. OpenAI (ChatGPT)")
+	fmt.Print("Enter 1 or 2 [1]: ")
+
+	choice, _ := reader.ReadString('\n')
+	choice = strings.TrimSpace(choice)
+
+	var fc FileConfig
+	switch choice {
+	case "2":
+		fc.Provider = providerOpenAI
+	default:
+		fc.Provider = providerAnthropic
+	}
+
+	// Prompt for API key with a link to the developer dashboard
+	if fc.Provider == providerOpenAI {
+		fmt.Println("\nGet your API key at: https://platform.openai.com/api-keys")
+		fmt.Print("Enter your OpenAI API key: ")
+		key, _ := reader.ReadString('\n')
+		fc.OpenAIKey = strings.TrimSpace(key)
+		if fc.OpenAIKey == "" {
+			return fc, fmt.Errorf("no API key provided")
+		}
+	} else {
+		fmt.Println("\nGet your API key at: https://console.anthropic.com/settings/keys")
+		fmt.Print("Enter your Anthropic API key: ")
+		key, _ := reader.ReadString('\n')
+		fc.AnthropicKey = strings.TrimSpace(key)
+		if fc.AnthropicKey == "" {
+			return fc, fmt.Errorf("no API key provided")
+		}
+	}
+
+	// Save config
+	if err := saveConfigFile(fc); err != nil {
+		return fc, fmt.Errorf("could not save config: %w", err)
+	}
+
+	configPath := filepath.Join(getConfigDirectory(), configFileName)
+	fmt.Println()
+	color.Green("Configuration saved to %s", configPath)
+	color.Yellow("⚠️  This file contains your API key. Do NOT commit it to git.")
+	fmt.Println()
+
+	return fc, nil
 }
 
 func runQuery(config Config, query string, showExamples bool) (*Response, error) {
@@ -505,10 +703,6 @@ func handleResponse(config Config, query string, response *Response, opts Respon
 		executeCommand(response.Command)
 	}
 
-	// Suggest alias for complex commands
-	if shouldSuggestAlias(response.Command) {
-		suggestAlias(query, response.Command)
-	}
 }
 
 // isDangerous checks if a command matches any dangerous patterns.
@@ -571,35 +765,6 @@ func executeCommand(command string) {
 	if err := cmd.Run(); err != nil {
 		color.Red("Error executing command: %v", err)
 	}
-}
-
-func shouldSuggestAlias(command string) bool {
-	// Suggest alias for commands longer than threshold or with complex pipes
-	return len(command) > aliasLengthThreshold || strings.Count(command, "|") > aliasPipeThreshold
-}
-
-func suggestAlias(query, command string) {
-	color.Cyan("\n💡 This command is complex. Want to create a shell alias?")
-
-	// Generate a simple alias name from the query
-	aliasName := generateAliasName(query)
-
-	color.HiBlack("Suggested alias:")
-	fmt.Printf("  alias %s='%s'\n", aliasName, command)
-	color.HiBlack("\nAdd this to your ~/.bashrc or ~/.zshrc")
-}
-
-func generateAliasName(query string) string {
-	// Create a simple alias name from the query (max 3 words)
-	words := strings.Fields(query)
-	if len(words) > 3 {
-		words = words[:3]
-	}
-
-	// Join and sanitize to alphanumeric only
-	name := strings.Join(words, "")
-	name = nonAlphanumericRegex.ReplaceAllString(name, "")
-	return strings.ToLower(name)
 }
 
 // parseInteractiveLine extracts query and flags from an interactive line.

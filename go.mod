@@ -7,12 +7,13 @@ require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/chzyer/readline v1.5.1
 	github.com/fatih/color v1.18.0
+	github.com/mattn/go-isatty v0.0.20
 	github.com/sashabaranov/go-openai v1.41.2
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect

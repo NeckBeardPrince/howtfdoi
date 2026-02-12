@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-02-11
+
+### Added
+
+- **XDG Config File Support**: API keys and provider preference now persist in a YAML config file
+  - Config stored at `$XDG_CONFIG_HOME/howtfdoi/howtfdoi.yaml` (default `~/.config/howtfdoi/howtfdoi.yaml`)
+  - Environment variables still take precedence over config file values
+  - Config file created with `0600` permissions and config directory with `0700` for security
+- **First-Run Setup Wizard**: Interactive prompt on first run when no API key is found
+  - Guides users through provider selection (Anthropic or OpenAI)
+  - Provides clickable links to developer dashboards for quick API key generation
+  - Saves configuration automatically to the config file
+- **Automatic `.gitignore`**: A `.gitignore` file is created in the config directory to prevent accidental commits of API keys
+- Config and state directories are both created on first run
+- Help output now shows config file location and documents `XDG_CONFIG_HOME` / `XDG_STATE_HOME` environment variables
+- Verbose mode (`-v`) now logs config file path
+
+### Changed
+
+- **History file renamed**: From `.howtfdoi_history` to `history.log` (now at `$XDG_STATE_HOME/howtfdoi/history.log`)
+- Error messages for missing API keys now reference the config file as an alternative to environment variables
+- Getting started section in help text updated to mention first-run setup
+
+### Removed
+
+- **Alias suggestions**: Removed the shell alias suggestion feature (`shouldSuggestAlias`, `suggestAlias`, `generateAliasName`)
+  - The feature was unreliable when the AI returned non-command responses
+  - Removed `aliasLengthThreshold`, `aliasPipeThreshold` constants and `nonAlphanumericRegex`
+
+### Dependencies
+
+- Added `gopkg.in/yaml.v3` for YAML config file parsing
+
 ## [1.0.5] - 2025-10-21
 
 ### Added
@@ -121,6 +154,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confirmation prompts before command execution
 - API key validation on startup
 
+[1.0.6]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.2...v1.0.3
