@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-02-11
+
+### Fixed
+
+- **Version display for `go install`**: `howtfdoi --version` now shows the correct version when installed via `go install github.com/neckbeardprince/howtfdoi@latest`. Uses `runtime/debug.ReadBuildInfo()` as fallback when ldflags aren't set.
+
 ## [1.0.6] - 2026-02-11
 
 ### Added
@@ -154,6 +160,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confirmation prompts before command execution
 - API key validation on startup
 
+[1.0.7]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.3...v1.0.4
