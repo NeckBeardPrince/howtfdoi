@@ -43,6 +43,11 @@ const (
 	providerOpenAI    = "openai"
 	providerChatGPT   = "chatgpt" // alias for openai
 	providerLMStudio  = "lmstudio"
+
+	// LM Studio configuration defaults
+	defaultLMStudioBaseURL = "http://localhost:1234/v1"
+	defaultLMStudioModel   = "local-model"
+	apiKeyNotNeeded        = "not-needed" // Placeholder for providers that don't require API keys
 )
 
 var (
@@ -230,6 +235,7 @@ type LMStudioProvider struct {
 // NewLMStudioProvider creates a new LM Studio provider
 func NewLMStudioProvider(baseURL, model string) *LMStudioProvider {
 	// Create client config with custom base URL
+	// LM Studio doesn't require an API key, so we pass an empty string
 	config := openai.DefaultConfig("")
 	config.BaseURL = baseURL
 
@@ -430,14 +436,14 @@ func setupConfig(verbose bool) Config {
 	case providerLMStudio:
 		provider = providerLMStudio
 		// LM Studio doesn't need an API key
-		apiKey = "not-needed"
+		apiKey = apiKeyNotNeeded
 		// Get base URL from env or config, default to localhost:1234
 		lmStudioBaseURL = os.Getenv("LMSTUDIO_BASE_URL")
 		if lmStudioBaseURL == "" {
 			lmStudioBaseURL = fileConfig.LMStudioBaseURL
 		}
 		if lmStudioBaseURL == "" {
-			lmStudioBaseURL = "http://localhost:1234/v1"
+			lmStudioBaseURL = defaultLMStudioBaseURL
 		}
 		// Get model from env or config, default to "local-model"
 		lmStudioModel = os.Getenv("LMSTUDIO_MODEL")
@@ -445,7 +451,7 @@ func setupConfig(verbose bool) Config {
 			lmStudioModel = fileConfig.LMStudioModel
 		}
 		if lmStudioModel == "" {
-			lmStudioModel = "local-model"
+			lmStudioModel = defaultLMStudioModel
 		}
 	case "":
 		// No env var set — check config file provider, then auto-detect
@@ -463,20 +469,20 @@ func setupConfig(verbose bool) Config {
 				apiKey = fileConfig.OpenAIKey
 			}
 		case providerLMStudio:
-			apiKey = "not-needed"
+			apiKey = apiKeyNotNeeded
 			lmStudioBaseURL = os.Getenv("LMSTUDIO_BASE_URL")
 			if lmStudioBaseURL == "" {
 				lmStudioBaseURL = fileConfig.LMStudioBaseURL
 			}
 			if lmStudioBaseURL == "" {
-				lmStudioBaseURL = "http://localhost:1234/v1"
+				lmStudioBaseURL = defaultLMStudioBaseURL
 			}
 			lmStudioModel = os.Getenv("LMSTUDIO_MODEL")
 			if lmStudioModel == "" {
 				lmStudioModel = fileConfig.LMStudioModel
 			}
 			if lmStudioModel == "" {
-				lmStudioModel = "local-model"
+				lmStudioModel = defaultLMStudioModel
 			}
 		default:
 			provider = providerAnthropic
@@ -516,14 +522,14 @@ func setupConfig(verbose bool) Config {
 		if provider == providerOpenAI {
 			apiKey = fc.OpenAIKey
 		} else if provider == providerLMStudio {
-			apiKey = "not-needed"
+			apiKey = apiKeyNotNeeded
 			lmStudioBaseURL = fc.LMStudioBaseURL
 			if lmStudioBaseURL == "" {
-				lmStudioBaseURL = "http://localhost:1234/v1"
+				lmStudioBaseURL = defaultLMStudioBaseURL
 			}
 			lmStudioModel = fc.LMStudioModel
 			if lmStudioModel == "" {
-				lmStudioModel = "local-model"
+				lmStudioModel = defaultLMStudioModel
 			}
 		} else {
 			provider = providerAnthropic
@@ -672,19 +678,19 @@ func runFirstTimeSetup() (FileConfig, error) {
 	} else if fc.Provider == providerLMStudio {
 		fmt.Println("\nLM Studio runs locally and doesn't require an API key.")
 		fmt.Println("Make sure LM Studio is running and has a model loaded.")
-		fmt.Print("Enter LM Studio base URL [http://localhost:1234/v1]: ")
+		fmt.Printf("Enter LM Studio base URL [%s]: ", defaultLMStudioBaseURL)
 		baseURL, _ := reader.ReadString('\n')
 		baseURL = strings.TrimSpace(baseURL)
 		if baseURL == "" {
-			fc.LMStudioBaseURL = "http://localhost:1234/v1"
+			fc.LMStudioBaseURL = defaultLMStudioBaseURL
 		} else {
 			fc.LMStudioBaseURL = baseURL
 		}
-		fmt.Print("Enter model name [local-model]: ")
+		fmt.Printf("Enter model name [%s]: ", defaultLMStudioModel)
 		model, _ := reader.ReadString('\n')
 		model = strings.TrimSpace(model)
 		if model == "" {
-			fc.LMStudioModel = "local-model"
+			fc.LMStudioModel = defaultLMStudioModel
 		} else {
 			fc.LMStudioModel = model
 		}
