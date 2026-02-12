@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -44,11 +45,22 @@ const (
 )
 
 var (
-	// version is set at build time via -ldflags
+	// version is set at build time via -ldflags, or read from Go module info
 	version = "dev"
 	// repository URL for documentation and downloads
 	repository = "https://github.com/NeckBeardPrince/howtfdoi"
 )
+
+func init() {
+	// If version wasn't set via ldflags, try to read it from Go module build info.
+	// This covers `go install github.com/neckbeardprince/howtfdoi@v1.0.6` where
+	// ldflags aren't used but Go embeds the module version automatically.
+	if version == "dev" {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			version = info.Main.Version
+		}
+	}
+}
 
 var (
 	// Dangerous command patterns (compiled once at startup)
