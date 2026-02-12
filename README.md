@@ -4,11 +4,11 @@
 
 Forget scrolling through Stack Overflow or man pages. Just ask.
 
-Ask CLI questions in plain English and get instant answers powered by Claude or ChatGPT.
+Ask CLI questions in plain English and get instant answers powered by Claude, ChatGPT, or LM Studio.
 
 ## Features
 
-- 🤖 **Multiple AI providers** - Choose between Claude (Anthropic) or ChatGPT (OpenAI)
+- 🤖 **Multiple AI providers** - Choose between Claude (Anthropic), ChatGPT (OpenAI), or LM Studio (local)
 - 🎨 **Color-coded output** - Commands in green, explanations in gray
 - 📋 **Copy to clipboard** - One flag to copy commands instantly
 - ⚡ **Direct execution** - Run commands with confirmation
@@ -21,6 +21,7 @@ Ask CLI questions in plain English and get instant answers powered by Claude or 
 - ⚡ **Blazing fast** - Uses prompt caching for speed
 - 🔧 **Config file** - Persist API keys and provider in `~/.config/howtfdoi/howtfdoi.yaml`
 - 🧙 **First-run setup** - Interactive wizard configures your API key on first use
+- 🏠 **Local AI support** - Use LM Studio for completely local, privacy-focused AI
 
 ## Installation
 
@@ -57,6 +58,36 @@ export OPENAI_API_KEY='your-api-key-here'
 
 Get your API key from: <https://platform.openai.com/api-keys>
 
+### Option 3: LM Studio (Local)
+
+LM Studio lets you run AI models locally on your machine, keeping everything private and offline.
+
+1. Download and install [LM Studio](https://lmstudio.ai/)
+2. Load a model in LM Studio (e.g., any GGUF model like Llama, Mistral, etc.)
+3. Start the local server in LM Studio (usually runs on `http://localhost:1234`)
+4. Configure howtfdoi:
+
+```bash
+export HOWTFDOI_AI_PROVIDER='lmstudio'
+# Optional: customize base URL and model name
+export LMSTUDIO_BASE_URL='http://localhost:1234/v1'
+export LMSTUDIO_MODEL='local-model'
+```
+
+Or add to your config file:
+
+```yaml
+provider: lmstudio
+lmstudio_base_url: http://localhost:1234/v1
+lmstudio_model: local-model
+```
+
+**Benefits of LM Studio:**
+- 🔒 **Complete privacy** - Your queries never leave your machine
+- 🌐 **Works offline** - No internet required after model download
+- 💰 **Free** - No API costs, unlimited queries
+- ⚡ **Fast** - Local inference with GPU acceleration
+
 ### Config File
 
 API keys and provider preference are stored in a YAML config file:
@@ -68,6 +99,10 @@ API keys and provider preference are stored in a YAML config file:
 provider: anthropic
 anthropic_api_key: sk-ant-...
 openai_api_key: sk-...
+# For LM Studio (local AI):
+# provider: lmstudio
+# lmstudio_base_url: http://localhost:1234/v1
+# lmstudio_model: local-model
 ```
 
 A `.gitignore` is automatically created in the config directory to prevent accidental commits.
@@ -86,17 +121,21 @@ Environment variables always take precedence over the config file:
 1. `HOWTFDOI_AI_PROVIDER` env var → `provider` in config → default "anthropic"
 2. `ANTHROPIC_API_KEY` env var → `anthropic_api_key` in config
 3. `OPENAI_API_KEY` env var → `openai_api_key` in config
+4. `LMSTUDIO_BASE_URL` env var → `lmstudio_base_url` in config → default "http://localhost:1234/v1"
+5. `LMSTUDIO_MODEL` env var → `lmstudio_model` in config → default "local-model"
 
 ### Choosing a Provider
 
-By default, `howtfdoi` uses Claude (Anthropic). To use OpenAI/ChatGPT instead:
+By default, `howtfdoi` uses Claude (Anthropic). To use other providers:
 
 ```bash
-# Set the provider explicitly
+# Use OpenAI/ChatGPT
 export HOWTFDOI_AI_PROVIDER=openai
+howtfdoi list files
 
-# Or use it inline
-HOWTFDOI_AI_PROVIDER=openai howtfdoi list files
+# Use LM Studio (local)
+export HOWTFDOI_AI_PROVIDER=lmstudio
+howtfdoi list files
 
 # "chatgpt" is an alias for "openai"
 HOWTFDOI_AI_PROVIDER=chatgpt howtfdoi list files

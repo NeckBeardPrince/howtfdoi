@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`howtfdoi` is a CLI tool that provides instant command-line answers powered by AI (Claude or ChatGPT). Users ask natural language questions about CLI commands and get immediate, concise answers with syntax highlighting.
+`howtfdoi` is a CLI tool that provides instant command-line answers powered by AI (Claude, ChatGPT, or LM Studio). Users ask natural language questions about CLI commands and get immediate, concise answers with syntax highlighting.
 
 ## Building & Testing
 
@@ -39,6 +39,11 @@ export OPENAI_API_KEY="your-key"
 HOWTFDOI_AI_PROVIDER=openai ./howtfdoi list files
 HOWTFDOI_AI_PROVIDER=chatgpt ./howtfdoi list files  # chatgpt is an alias for openai
 
+# Test with LM Studio (local)
+# First, start LM Studio and load a model
+HOWTFDOI_AI_PROVIDER=lmstudio ./howtfdoi list files
+LMSTUDIO_BASE_URL=http://localhost:1234/v1 LMSTUDIO_MODEL=local-model HOWTFDOI_AI_PROVIDER=lmstudio ./howtfdoi list files
+
 # Check history (XDG Base Directory compliant)
 cat ~/.local/state/howtfdoi/history.log
 
@@ -61,7 +66,7 @@ The entire application is in `main.go` - this is intentional for simplicity and 
 
 1. **Argument Parsing**: Flags (`-c`, `-e`, `-x`, `-v`) parsed with `flag` package
 2. **Config Loading**: Loads config file, resolves provider/API key (env vars > config file > first-run setup)
-3. **Provider Selection**: Determines AI provider (Anthropic/Claude or OpenAI/ChatGPT)
+3. **Provider Selection**: Determines AI provider (Anthropic/Claude, OpenAI/ChatGPT, or LM Studio)
 4. **Query Processing**: Natural language query sent to selected AI provider via provider abstraction
 5. **Response Parsing**: Separates command from explanation for color formatting
 6. **Post-Processing**: Consolidated in `handleResponse()` - safety checks, history logging, clipboard copy, execution
@@ -74,6 +79,7 @@ The entire application is in `main.go` - this is intentional for simplicity and 
 - **Priority order**: Environment variables > config file values > defaults
 - Provider selection via `HOWTFDOI_AI_PROVIDER` env var or `provider` in config file
 - API key from env var (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) or config file
+- LM Studio configuration via `LMSTUDIO_BASE_URL` and `LMSTUDIO_MODEL` env vars or config file
 - Auto-detects provider if not explicitly set (checks which API key is available)
 - **XDG Base Directory support**: History at `$XDG_STATE_HOME/howtfdoi/history.log` (default `~/.local/state/howtfdoi/history.log`)
 - Platform detection via `runtime.GOOS`
@@ -90,16 +96,18 @@ The entire application is in `main.go` - this is intentional for simplicity and 
 **First-Run Setup** (`runFirstTimeSetup`)
 
 - Triggered when no API key is found and stdin is a terminal (`isatty` check)
-- Prompts for provider selection (Anthropic or OpenAI)
+- Prompts for provider selection (Anthropic, OpenAI, or LM Studio)
 - Provides clickable links to developer dashboards for API key generation
+- For LM Studio, prompts for base URL and model name with sensible defaults
 - Saves configuration via `saveConfigFile()`
 
-**Provider Abstraction** (`Provider`, `AnthropicProvider`, `OpenAIProvider`)
+**Provider Abstraction** (`Provider`, `AnthropicProvider`, `OpenAIProvider`, `LMStudioProvider`)
 
 - Interface-based design allows switching between AI providers
 - `AnthropicProvider`: Uses Anthropic SDK streaming with prompt caching enabled
 - `OpenAIProvider`: Uses OpenAI SDK streaming for real-time responses
-- Both providers implement the same `Query` interface for consistency
+- `LMStudioProvider`: Uses OpenAI SDK with custom base URL for local LM Studio server
+- All providers implement the same `Query` interface for consistency
 
 **Query Execution** (`runQuery`)
 
@@ -148,7 +156,7 @@ Both prompts include platform info and are optimized for brevity. When using Ant
 ## Dependencies
 
 - `github.com/anthropics/anthropic-sdk-go` - Claude API client
-- `github.com/sashabaranov/go-openai` - OpenAI/ChatGPT API client
+- `github.com/sashabaranov/go-openai` - OpenAI/ChatGPT API client (also used for LM Studio)
 - `github.com/fatih/color` - Terminal colors
 - `github.com/atotto/clipboard` - Cross-platform clipboard
 - `github.com/chzyer/readline` - Interactive REPL
@@ -160,10 +168,13 @@ Both prompts include platform info and are optimized for brevity. When using Ant
 - `ANTHROPIC_API_KEY` environment variable or config file entry (required for Claude/Anthropic)
 - `OPENAI_API_KEY` environment variable or config file entry (required for ChatGPT/OpenAI)
 - `HOWTFDOI_AI_PROVIDER` environment variable (optional, defaults to anthropic)
+- `LMSTUDIO_BASE_URL` environment variable (optional for LM Studio, defaults to http://localhost:1234/v1)
+- `LMSTUDIO_MODEL` environment variable (optional for LM Studio, defaults to local-model)
 - `XDG_CONFIG_HOME` to override config directory (default: `~/.config`)
 - `XDG_STATE_HOME` to override state directory (default: `~/.local/state`)
 - Terminal with ANSI color support for best experience
 - Clipboard support requires platform-specific tools (xclip/xsel on Linux)
+- For LM Studio: LM Studio application running locally with a model loaded
 
 ## Config File
 
@@ -175,6 +186,10 @@ Located at `$XDG_CONFIG_HOME/howtfdoi/howtfdoi.yaml` (default `~/.config/howtfdo
 provider: anthropic
 anthropic_api_key: sk-ant-...
 openai_api_key: sk-...
+# For LM Studio (local):
+# provider: lmstudio
+# lmstudio_base_url: http://localhost:1234/v1
+# lmstudio_model: local-model
 ```
 
 A `.gitignore` is automatically created in the config directory to ignore `howtfdoi.yaml`.
