@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-02-12
+
+### Added
+
+- **LM Studio Support**: Use local AI models via LM Studio for completely private, offline, free inference
+  - New `lmstudio` provider option alongside `anthropic` and `openai`
+  - `LMStudioProvider` embeds `OpenAIProvider` (no code duplication) since LM Studio uses an OpenAI-compatible API
+  - Environment variables: `LMSTUDIO_BASE_URL` (default: http://localhost:1234/v1) and `LMSTUDIO_MODEL` (default: local-model)
+  - Config file fields: `lmstudio_base_url` and `lmstudio_model`
+  - First-run setup wizard now includes LM Studio as option 3
+  - No API key required — works entirely locally
+  - Verbose mode shows LM Studio base URL and model
+
+### Changed
+
+- `OpenAIProvider` now stores model as a field (instead of using a package-level constant) to support embedding by `LMStudioProvider`
+- Updated help text, README, and CLAUDE.md with LM Studio setup instructions
+- Provider selection now supports `lmstudio` in addition to `anthropic`, `openai`, and `chatgpt`
+
 ## [1.0.8] - 2026-02-11
 
 ### Fixed
@@ -166,6 +185,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confirmation prompts before command execution
 - API key validation on startup
 
+[1.0.9]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.5...v1.0.6

@@ -4,11 +4,11 @@
 
 Forget scrolling through Stack Overflow or man pages. Just ask.
 
-Ask CLI questions in plain English and get instant answers powered by Claude or ChatGPT.
+Ask CLI questions in plain English and get instant answers powered by Claude, ChatGPT, or LM Studio.
 
 ## Features
 
-- 🤖 **Multiple AI providers** - Choose between Claude (Anthropic) or ChatGPT (OpenAI)
+- 🤖 **Multiple AI providers** - Choose between Claude (Anthropic), ChatGPT (OpenAI), or LM Studio (local)
 - 🎨 **Color-coded output** - Commands in green, explanations in gray
 - 📋 **Copy to clipboard** - One flag to copy commands instantly
 - ⚡ **Direct execution** - Run commands with confirmation
@@ -21,6 +21,7 @@ Ask CLI questions in plain English and get instant answers powered by Claude or 
 - ⚡ **Blazing fast** - Uses prompt caching for speed
 - 🔧 **Config file** - Persist API keys and provider in `~/.config/howtfdoi/howtfdoi.yaml`
 - 🧙 **First-run setup** - Interactive wizard configures your API key on first use
+- 🏠 **Local AI support** - Use LM Studio for completely local, private, free AI
 
 ## Installation
 
@@ -57,6 +58,30 @@ export OPENAI_API_KEY='your-api-key-here'
 
 Get your API key from: <https://platform.openai.com/api-keys>
 
+### Option 3: LM Studio (Local)
+
+Run AI models locally on your machine — completely private, offline, and free.
+
+1. Download and install [LM Studio](https://lmstudio.ai/)
+2. Load a model (recommended: `qwen2.5-coder-7b-instruct` for CLI tasks)
+3. Start the local server in LM Studio
+4. Configure howtfdoi:
+
+```bash
+export HOWTFDOI_AI_PROVIDER=lmstudio
+# Optional: customize base URL and model name
+export LMSTUDIO_BASE_URL='http://localhost:1234/v1'
+export LMSTUDIO_MODEL='local-model'
+```
+
+Or add to your config file:
+
+```yaml
+provider: lmstudio
+lmstudio_base_url: http://localhost:1234/v1
+lmstudio_model: local-model
+```
+
 ### Config File
 
 API keys and provider preference are stored in a YAML config file:
@@ -68,6 +93,10 @@ API keys and provider preference are stored in a YAML config file:
 provider: anthropic
 anthropic_api_key: sk-ant-...
 openai_api_key: sk-...
+# For LM Studio (local):
+# provider: lmstudio
+# lmstudio_base_url: http://localhost:1234/v1
+# lmstudio_model: local-model
 ```
 
 A `.gitignore` is automatically created in the config directory to prevent accidental commits.
@@ -86,17 +115,21 @@ Environment variables always take precedence over the config file:
 1. `HOWTFDOI_AI_PROVIDER` env var → `provider` in config → default "anthropic"
 2. `ANTHROPIC_API_KEY` env var → `anthropic_api_key` in config
 3. `OPENAI_API_KEY` env var → `openai_api_key` in config
+4. `LMSTUDIO_BASE_URL` env var → `lmstudio_base_url` in config → default `http://localhost:1234/v1`
+5. `LMSTUDIO_MODEL` env var → `lmstudio_model` in config → default `local-model`
 
 ### Choosing a Provider
 
-By default, `howtfdoi` uses Claude (Anthropic). To use OpenAI/ChatGPT instead:
+By default, `howtfdoi` uses Claude (Anthropic). To use other providers:
 
 ```bash
-# Set the provider explicitly
+# Use OpenAI/ChatGPT
 export HOWTFDOI_AI_PROVIDER=openai
+howtfdoi list files
 
-# Or use it inline
-HOWTFDOI_AI_PROVIDER=openai howtfdoi list files
+# Use LM Studio (local)
+export HOWTFDOI_AI_PROVIDER=lmstudio
+howtfdoi list files
 
 # "chatgpt" is an alias for "openai"
 HOWTFDOI_AI_PROVIDER=chatgpt howtfdoi list files
@@ -279,7 +312,7 @@ howtfdoi test network connection
 ## Why howtfdoi?
 
 - **Blazing fast**: Uses fast models (Claude Haiku or GPT-4o-mini) with streaming + prompt caching
-- **Flexible**: Choose your preferred AI provider (Claude or ChatGPT)
+- **Flexible**: Choose between Claude, ChatGPT, or local LM Studio
 - **Natural language**: Ask questions the way you think
 - **CLI focused**: Specialized for command-line tools
 - **No browser needed**: Everything in your terminal
@@ -323,8 +356,8 @@ he grep
 ## How it Works
 
 1. Takes your natural language question
-2. Determines which AI provider to use (Claude or ChatGPT)
-3. Streams to the selected API using fast models (Haiku or GPT-4o-mini)
+2. Determines which AI provider to use (Claude, ChatGPT, or LM Studio)
+3. Streams to the selected API using fast models (Haiku, GPT-4o-mini, or local)
 4. Uses prompt caching for repeated queries (even faster with Claude!)
 5. Platform detection ensures OS-specific answers
 6. Parses and colorizes the output
@@ -352,6 +385,12 @@ he grep
 - Check which provider is being used: `howtfdoi -v list files`
 - Re-run first-time setup: delete your config file and run `howtfdoi`
 - Verify your account has credits (Anthropic Console or OpenAI Dashboard)
+
+**LM Studio not working?**
+
+- Make sure LM Studio is running with a model loaded
+- Check the server URL: `howtfdoi -v list files` will show the base URL being used
+- Verify the local server is responding: `curl http://localhost:1234/v1/models`
 
 ## Contributing
 
