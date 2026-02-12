@@ -391,6 +391,29 @@ func main() {
 	handleResponse(config, query, response, opts)
 }
 
+// resolveLMStudioConfig resolves LM Studio configuration from environment variables, config file, and defaults
+func resolveLMStudioConfig(fileConfig FileConfig) (baseURL, model string) {
+	// Get base URL from env or config, default to localhost:1234
+	baseURL = os.Getenv("LMSTUDIO_BASE_URL")
+	if baseURL == "" {
+		baseURL = fileConfig.LMStudioBaseURL
+	}
+	if baseURL == "" {
+		baseURL = defaultLMStudioBaseURL
+	}
+
+	// Get model from env or config, default to "local-model"
+	model = os.Getenv("LMSTUDIO_MODEL")
+	if model == "" {
+		model = fileConfig.LMStudioModel
+	}
+	if model == "" {
+		model = defaultLMStudioModel
+	}
+
+	return baseURL, model
+}
+
 func setupConfig(verbose bool) Config {
 	dataDir := getDataDirectory()
 	configDir := getConfigDirectory()
@@ -437,22 +460,7 @@ func setupConfig(verbose bool) Config {
 		provider = providerLMStudio
 		// LM Studio doesn't need an API key
 		apiKey = apiKeyNotNeeded
-		// Get base URL from env or config, default to localhost:1234
-		lmStudioBaseURL = os.Getenv("LMSTUDIO_BASE_URL")
-		if lmStudioBaseURL == "" {
-			lmStudioBaseURL = fileConfig.LMStudioBaseURL
-		}
-		if lmStudioBaseURL == "" {
-			lmStudioBaseURL = defaultLMStudioBaseURL
-		}
-		// Get model from env or config, default to "local-model"
-		lmStudioModel = os.Getenv("LMSTUDIO_MODEL")
-		if lmStudioModel == "" {
-			lmStudioModel = fileConfig.LMStudioModel
-		}
-		if lmStudioModel == "" {
-			lmStudioModel = defaultLMStudioModel
-		}
+		lmStudioBaseURL, lmStudioModel = resolveLMStudioConfig(fileConfig)
 	case "":
 		// No env var set — check config file provider, then auto-detect
 		if fileConfig.Provider != "" {
@@ -470,20 +478,7 @@ func setupConfig(verbose bool) Config {
 			}
 		case providerLMStudio:
 			apiKey = apiKeyNotNeeded
-			lmStudioBaseURL = os.Getenv("LMSTUDIO_BASE_URL")
-			if lmStudioBaseURL == "" {
-				lmStudioBaseURL = fileConfig.LMStudioBaseURL
-			}
-			if lmStudioBaseURL == "" {
-				lmStudioBaseURL = defaultLMStudioBaseURL
-			}
-			lmStudioModel = os.Getenv("LMSTUDIO_MODEL")
-			if lmStudioModel == "" {
-				lmStudioModel = fileConfig.LMStudioModel
-			}
-			if lmStudioModel == "" {
-				lmStudioModel = defaultLMStudioModel
-			}
+			lmStudioBaseURL, lmStudioModel = resolveLMStudioConfig(fileConfig)
 		default:
 			provider = providerAnthropic
 			apiKey = os.Getenv("ANTHROPIC_API_KEY")
@@ -523,14 +518,7 @@ func setupConfig(verbose bool) Config {
 			apiKey = fc.OpenAIKey
 		} else if provider == providerLMStudio {
 			apiKey = apiKeyNotNeeded
-			lmStudioBaseURL = fc.LMStudioBaseURL
-			if lmStudioBaseURL == "" {
-				lmStudioBaseURL = defaultLMStudioBaseURL
-			}
-			lmStudioModel = fc.LMStudioModel
-			if lmStudioModel == "" {
-				lmStudioModel = defaultLMStudioModel
-			}
+			lmStudioBaseURL, lmStudioModel = resolveLMStudioConfig(fc)
 		} else {
 			provider = providerAnthropic
 			apiKey = fc.AnthropicKey
