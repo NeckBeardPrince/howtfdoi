@@ -17,9 +17,10 @@ Ask CLI questions in plain English and get instant answers powered by Claude or 
 - 💾 **Query history** - XDG-compliant storage in `~/.local/state/howtfdoi/`
 - 🖥️ **Platform-aware** - Detects your OS for tailored answers
 - ⚠️ **Danger warnings** - Highlights risky commands in yellow
-- 💡 **Smart suggestions** - Offers shell aliases for complex commands
 - 🔍 **Verbose mode** - Debug and troubleshoot with detailed logging
 - ⚡ **Blazing fast** - Uses prompt caching for speed
+- 🔧 **Config file** - Persist API keys and provider in `~/.config/howtfdoi/howtfdoi.yaml`
+- 🧙 **First-run setup** - Interactive wizard configures your API key on first use
 
 ## Installation
 
@@ -36,7 +37,9 @@ go install github.com/neckbeardprince/howtfdoi@latest
 
 ## Setup
 
-Choose your AI provider and set the corresponding API key:
+The easiest way to get started is to just run `howtfdoi` — the first-run setup wizard will walk you through selecting a provider and entering your API key. Your configuration is saved to `~/.config/howtfdoi/howtfdoi.yaml`.
+
+Alternatively, you can configure via environment variables:
 
 ### Option 1: Claude (Anthropic) - Default
 
@@ -44,7 +47,7 @@ Choose your AI provider and set the corresponding API key:
 export ANTHROPIC_API_KEY='your-api-key-here'
 ```
 
-Get your API key from: <https://console.anthropic.com/>
+Get your API key from: <https://console.anthropic.com/settings/keys>
 
 ### Option 2: ChatGPT (OpenAI)
 
@@ -52,7 +55,37 @@ Get your API key from: <https://console.anthropic.com/>
 export OPENAI_API_KEY='your-api-key-here'
 ```
 
-Get your API key from: <https://platform.openai.com/>
+Get your API key from: <https://platform.openai.com/api-keys>
+
+### Config File
+
+API keys and provider preference are stored in a YAML config file:
+
+**Default location:** `~/.config/howtfdoi/howtfdoi.yaml`
+
+```yaml
+# WARNING: This file contains API keys. Do NOT commit this file to git.
+provider: anthropic
+anthropic_api_key: sk-ant-...
+openai_api_key: sk-...
+```
+
+A `.gitignore` is automatically created in the config directory to prevent accidental commits.
+
+Set `XDG_CONFIG_HOME` to change the config directory:
+
+```bash
+export XDG_CONFIG_HOME=/custom/path
+# Config stored at: /custom/path/howtfdoi/howtfdoi.yaml
+```
+
+### Priority Order
+
+Environment variables always take precedence over the config file:
+
+1. `HOWTFDOI_AI_PROVIDER` env var → `provider` in config → default "anthropic"
+2. `ANTHROPIC_API_KEY` env var → `anthropic_api_key` in config
+3. `OPENAI_API_KEY` env var → `openai_api_key` in config
 
 ### Choosing a Provider
 
@@ -70,7 +103,7 @@ HOWTFDOI_AI_PROVIDER=chatgpt howtfdoi list files
 ```
 
 If you don't set `HOWTFDOI_AI_PROVIDER`, the tool will:
-1. Use Anthropic if `ANTHROPIC_API_KEY` is set
+1. Use Anthropic if `ANTHROPIC_API_KEY` is set (env or config)
 2. Fall back to OpenAI if only `OPENAI_API_KEY` is set
 3. Use OpenAI if both keys are set but you specify the provider
 
@@ -108,7 +141,7 @@ howtfdoi -v compress files
 
 # Show version
 howtfdoi --version
-# Output: howtfdoi version 1.0.4
+# Output: howtfdoi version 1.0.6
 
 # Show help
 howtfdoi --help
@@ -163,26 +196,11 @@ Automatically warns you about potentially dangerous commands:
 - `mkfs` filesystem creation
 - Fork bombs and other risky patterns
 
-### 💡 Alias Suggestions
-
-For complex commands (>40 chars or multiple pipes), howtfdoi suggests creating a shell alias:
-
-```bash
-$ howtfdoi find all log files and grep for errors
-find . -name "*.log" -type f -exec grep -H "ERROR" {} \;
-
-💡 This command is complex. Want to create a shell alias?
-Suggested alias:
-  alias findalllogfiles='find . -name "*.log" -type f -exec grep -H "ERROR" {} \;'
-
-Add this to your ~/.bashrc or ~/.zshrc
-```
-
 ### 💾 Query History
 
 All queries are saved with timestamps following the XDG Base Directory specification:
 
-**Default location:** `~/.local/state/howtfdoi/.howtfdoi_history`
+**Default location:** `~/.local/state/howtfdoi/history.log`
 
 ```
 [2025-01-15 14:30:22] tarball a directory
@@ -193,7 +211,7 @@ tar -czf archive.tar.gz directory/
 View your history anytime:
 
 ```bash
-cat ~/.local/state/howtfdoi/.howtfdoi_history
+cat ~/.local/state/howtfdoi/history.log
 ```
 
 **Custom location:** Set `XDG_STATE_HOME` to change the base directory:
@@ -201,7 +219,7 @@ cat ~/.local/state/howtfdoi/.howtfdoi_history
 ```bash
 export XDG_STATE_HOME=/custom/path
 howtfdoi find files
-# History saved to: /custom/path/howtfdoi/.howtfdoi_history
+# History saved to: /custom/path/howtfdoi/history.log
 ```
 
 ### 🔍 Verbose Mode
@@ -211,13 +229,17 @@ Use the `-v` flag to enable detailed logging for debugging and troubleshooting:
 ```bash
 $ howtfdoi -v find large files
 Using data directory: /Users/you/.local/state/howtfdoi
+Using config file: /Users/you/.config/howtfdoi/howtfdoi.yaml
+Using AI provider: anthropic
 find / -type f -size +100M -exec ls -lh {} \;
 (Finds files larger than 100MB and lists them with sizes)
-Saved to history: /Users/you/.local/state/howtfdoi/.howtfdoi_history
+Saved to history: /Users/you/.local/state/howtfdoi/history.log
 ```
 
 Verbose mode shows:
 - Data directory location on startup
+- Config file path
+- Active AI provider
 - History file save confirmations
 - Warnings if history cannot be saved
 
@@ -325,9 +347,10 @@ he grep
 **API errors?**
 
 - Verify your API key is set:
-  - For Claude: `echo $ANTHROPIC_API_KEY`
-  - For ChatGPT: `echo $OPENAI_API_KEY`
+  - Check config file: `cat ~/.config/howtfdoi/howtfdoi.yaml`
+  - Or env vars: `echo $ANTHROPIC_API_KEY` / `echo $OPENAI_API_KEY`
 - Check which provider is being used: `howtfdoi -v list files`
+- Re-run first-time setup: delete your config file and run `howtfdoi`
 - Verify your account has credits (Anthropic Console or OpenAI Dashboard)
 
 ## Contributing
