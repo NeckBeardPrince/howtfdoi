@@ -62,9 +62,6 @@ homebrew_casks:
     description: "Instant AI-powered CLI command answers from your terminal"
     binaries:
       - howtfdoi
-    generate_completions_from_executable:
-      shells: [bash, zsh, fish]
-      shell_parameter_format: completion
     caveats: |
       howtfdoi is not notarized. If macOS Gatekeeper blocks it on first run, remove the quarantine attribute:
         xattr -d com.apple.quarantine $(which howtfdoi)
