@@ -25,6 +25,20 @@ Ask CLI questions in plain English and get instant answers powered by Claude, Ch
 
 ## Installation
 
+### Homebrew (recommended)
+
+```bash
+brew install neckbeardprince/tap/howtfdoi
+```
+
+**macOS Gatekeeper note:** If macOS blocks the binary with a "cannot be opened because the developer cannot be verified" error, remove the quarantine flag:
+
+```bash
+xattr -d com.apple.quarantine $(which howtfdoi)
+```
+
+### From source
+
 ```bash
 # Build the binary
 go build -o howtfdoi
