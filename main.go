@@ -19,7 +19,11 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/atotto/clipboard"
-	"github.com/chzyer/readline"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/fatih/color"
 	"github.com/mattn/go-isatty"
 	openai "github.com/sashabaranov/go-openai"
@@ -692,40 +696,58 @@ func runQuery(config Config, query string, showExamples bool) (*Response, error)
 }
 
 func buildSystemPrompt(platform string, showExamples bool) string {
+	noMarkdownRule := "- Output in PLAIN TEXT ONLY — no markdown, no backticks, no code fences. Never wrap commands in backtick or triple-backtick blocks."
+
 	if showExamples {
-		return `You are a command-line expert assistant. Provide multiple practical examples for the requested command or tool.
-
-Rules:
-- Output in plain text only, as this output may be copied directly to a terminal
-- Show 3-5 different use cases
-- Each example should have the command and a brief explanation
-- Focus on common, practical scenarios
-- Format: command followed by explanation in parentheses
-
-Example format:
-tar -czf archive.tar.gz directory/
-(Creates a compressed tarball)
-
-tar -xzf archive.tar.gz
-(Extracts a compressed tarball)
-
-tar -tzf archive.tar.gz
-(Lists contents without extracting)`
+		return "You are a command-line expert assistant. Provide multiple practical examples for the requested command or tool.\n\n" +
+			"Rules:\n" +
+			noMarkdownRule + "\n" +
+			"- Show 3-5 different use cases\n" +
+			"- Each example: command on its own line, then explanation in parentheses on the next line\n" +
+			"- Focus on common, practical scenarios\n\n" +
+			"Example format:\n" +
+			"tar -czf archive.tar.gz directory/\n" +
+			"(Creates a compressed tarball)\n\n" +
+			"tar -xzf archive.tar.gz\n" +
+			"(Extracts a compressed tarball)\n\n" +
+			"tar -tzf archive.tar.gz\n" +
+			"(Lists contents without extracting)"
 	}
 
-	return fmt.Sprintf(`You are a command-line expert assistant for %s systems. Provide concise, accurate answers about CLI tools and commands.
+	return fmt.Sprintf(
+		"You are a command-line expert assistant for %s systems. Provide concise, accurate answers about CLI tools and commands.\n\n"+
+			"Rules:\n"+
+			noMarkdownRule+"\n"+
+			"- Give the command/answer directly and immediately\n"+
+			"- Be extremely concise - no unnecessary explanation unless the command is complex\n"+
+			"- Show the actual command first, then a brief one-line explanation if needed\n"+
+			"- Provide platform-specific commands when relevant (%s vs Linux vs Windows)\n"+
+			"- Focus on common Unix/Linux CLI tools\n\n"+
+			"Example format:\n"+
+			"tar -czf archive.tar.gz directory/\n"+
+			"(Creates a compressed tarball of the directory)",
+		platform, platform,
+	)
+}
 
-Rules:
-- Output in plain text only, as this output may be copied directly to a terminal
-- Give the command/answer directly and immediately
-- Be extremely concise - no unnecessary explanation unless the command is complex
-- Show the actual command first, then a brief one-line explanation if needed
-- Provide platform-specific commands when relevant (%s vs Linux vs Windows)
-- Focus on common Unix/Linux CLI tools
-
-Example format:
-tar -czf archive.tar.gz directory/
-(Creates a compressed tarball of the directory)`, platform, platform)
+// stripMarkdown removes markdown code fences and inline backticks from text.
+// The AI occasionally returns backtick-fenced blocks despite being told not to.
+func stripMarkdown(text string) string {
+	lines := strings.Split(text, "\n")
+	var out []string
+	for _, line := range lines {
+		// Drop lines that are only a code fence (``` or ```bash etc.)
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			continue
+		}
+		// Strip inline backtick wrapping from a whole line (e.g. `command`)
+		if strings.HasPrefix(trimmed, "`") && strings.HasSuffix(trimmed, "`") && len(trimmed) > 2 {
+			line = trimmed[1 : len(trimmed)-1]
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
 
 // parseResponse extracts the command and explanation from Claude's response.
@@ -733,6 +755,7 @@ tar -czf archive.tar.gz directory/
 //   - First non-empty line: the actual command
 //   - Remaining lines: explanation/context
 func parseResponse(text string) *Response {
+	text = stripMarkdown(text)
 	lines := strings.Split(text, "\n")
 	response := &Response{
 		FullText: text,
@@ -893,50 +916,248 @@ func parseInteractiveLine(line string) (query string, opts ResponseOptions, show
 	return
 }
 
+// --- Bubbletea TUI for interactive mode ---
+
+// tuiState represents what the TUI is currently doing
+type tuiState int
+
+const (
+	tuiStateInput    tuiState = iota // waiting for user input
+	tuiStateLoading                  // querying the AI
+	tuiStateResponse                 // displaying a response
+)
+
+// queryResultMsg carries the result of an async AI query back to the TUI
+type queryResultMsg struct {
+	response *Response
+	query    string
+	opts     ResponseOptions
+	err      error
+}
+
+// tuiModel is the Bubbletea application model
+type tuiModel struct {
+	config    Config
+	state     tuiState
+	textarea  textarea.Model
+	viewport  viewport.Model
+	spinner   spinner.Model
+	history   []string // rendered response history
+	width     int
+	height    int
+	lastQuery string
+	lastOpts  ResponseOptions
+	err       error
+
+	// styles
+	stylePrompt   lipgloss.Style
+	styleResponse lipgloss.Style
+	styleCommand  lipgloss.Style
+	styleHint     lipgloss.Style
+	styleError    lipgloss.Style
+	styleBorder   lipgloss.Style
+}
+
+func newTUIModel(config Config) tuiModel {
+	ta := textarea.New()
+	ta.Placeholder = "Ask a CLI question... (Enter to send, Ctrl+D or 'exit' to quit)"
+	ta.Focus()
+	ta.SetWidth(80)
+	ta.SetHeight(3)
+	ta.ShowLineNumbers = false
+	ta.KeyMap.InsertNewline.SetEnabled(false) // Enter submits, not newlines
+
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+
+	vp := viewport.New(80, 20)
+	vp.SetContent("")
+
+	return tuiModel{
+		config:   config,
+		state:    tuiStateInput,
+		textarea: ta,
+		viewport: vp,
+		spinner:  sp,
+
+		stylePrompt:   lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true),
+		styleResponse: lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
+		styleCommand:  lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true),
+		styleHint:     lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
+		styleError:    lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+		styleBorder:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("6")).Padding(0, 1),
+	}
+}
+
+func (m tuiModel) Init() tea.Cmd {
+	return textarea.Blink
+}
+
+// asyncQuery runs the AI query in a goroutine and returns a tea.Cmd
+func asyncQuery(config Config, query string, opts ResponseOptions, showExamples bool) tea.Cmd {
+	return func() tea.Msg {
+		resp, err := runQuery(config, query, showExamples)
+		return queryResultMsg{response: resp, query: query, opts: opts, err: err}
+	}
+}
+
+func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.Type {
+		case tea.KeyCtrlC, tea.KeyCtrlD:
+			return m, tea.Quit
+		case tea.KeyEnter:
+			if m.state != tuiStateInput {
+				break
+			}
+			line := strings.TrimSpace(m.textarea.Value())
+			if line == "" {
+				break
+			}
+			if line == "exit" || line == "quit" {
+				return m, tea.Quit
+			}
+
+			query, opts, showExamples := parseInteractiveLine(line)
+			if query == "" {
+				m.textarea.Reset()
+				break
+			}
+
+			m.lastQuery = query
+			m.lastOpts = opts
+			m.state = tuiStateLoading
+			m.textarea.Reset()
+			cmds = append(cmds, asyncQuery(m.config, query, opts, showExamples), m.spinner.Tick)
+		}
+
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.textarea.SetWidth(msg.Width - 4)
+		m.viewport.Width = msg.Width - 4
+		m.viewport.Height = msg.Height - 10
+		m.viewport.SetContent(strings.Join(m.history, "\n\n"))
+
+	case queryResultMsg:
+		m.state = tuiStateResponse
+		if msg.err != nil {
+			m.err = msg.err
+			entry := m.styleError.Render("Error: " + msg.err.Error())
+			m.history = append(m.history, m.stylePrompt.Render("howtfdoi> ")+m.styleHint.Render(msg.query), entry)
+		} else {
+			// Save to history file
+			saveToHistory(m.config, msg.query, msg.response.FullText)
+
+			// Copy to clipboard if requested
+			if msg.opts.CopyToClipboard && msg.response.Command != "" {
+				_ = clipboard.WriteAll(msg.response.Command)
+			}
+
+			// Build rendered entry
+			var parts []string
+			parts = append(parts, m.stylePrompt.Render("howtfdoi> ")+m.styleHint.Render(msg.query))
+			if msg.response.Command != "" {
+				parts = append(parts, m.styleCommand.Render(msg.response.Command))
+				if msg.response.Explanation != "" {
+					parts = append(parts, m.styleResponse.Render(msg.response.Explanation))
+				}
+				if isDangerous(msg.response.Command) {
+					parts = append(parts, m.styleError.Render("WARNING: This command may be dangerous!"))
+				}
+				if msg.opts.CopyToClipboard {
+					parts = append(parts, m.styleHint.Render("Copied to clipboard."))
+				}
+			} else {
+				parts = append(parts, m.styleResponse.Render(msg.response.FullText))
+			}
+			m.history = append(m.history, strings.Join(parts, "\n"))
+
+			// If execute was requested, we'll need to quit TUI and run it
+			if msg.opts.Execute && msg.response.Command != "" {
+				m.state = tuiStateInput
+				m.viewport.SetContent(strings.Join(m.history, "\n\n"))
+				m.viewport.GotoBottom()
+				// Queue execution after render
+				return m, tea.Sequence(tea.Println(""), tea.Quit)
+			}
+		}
+
+		m.viewport.SetContent(strings.Join(m.history, "\n\n"))
+		m.viewport.GotoBottom()
+		m.state = tuiStateInput
+		cmds = append(cmds, textarea.Blink)
+
+	case spinner.TickMsg:
+		if m.state == tuiStateLoading {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+	}
+
+	// Update child components
+	var taCmd, vpCmd tea.Cmd
+	if m.state == tuiStateInput {
+		m.textarea, taCmd = m.textarea.Update(msg)
+		cmds = append(cmds, taCmd)
+	}
+	m.viewport, vpCmd = m.viewport.Update(msg)
+	cmds = append(cmds, vpCmd)
+
+	return m, tea.Batch(cmds...)
+}
+
+func (m tuiModel) View() string {
+	if m.width == 0 {
+		return "Loading..."
+	}
+
+	hint := m.styleHint.Render("Flags: -c copy  -x execute  -e examples  |  Ctrl+D or 'exit' to quit")
+
+	var statusLine string
+	if m.state == tuiStateLoading {
+		statusLine = m.spinner.View() + " " + m.styleHint.Render("Asking AI...")
+	} else {
+		statusLine = m.stylePrompt.Render("howtfdoi")
+	}
+
+	vpView := m.styleBorder.Width(m.width - 4).Render(m.viewport.View())
+	taView := m.styleBorder.Width(m.width - 4).Render(m.textarea.View())
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		vpView,
+		"",
+		statusLine,
+		taView,
+		hint,
+	)
+}
+
 func runInteractiveMode(config Config) {
-	// Setup readline for interactive mode
-	rl, err := readline.New("howtfdoi> ")
+	m := newTUIModel(config)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+
+	finalModel, err := p.Run()
 	if err != nil {
-		color.Red("Error starting interactive mode: %v", err)
+		color.Red("Error running interactive mode: %v", err)
 		os.Exit(1)
 	}
-	defer rl.Close()
 
-	color.Cyan("🚀 Interactive mode - Type your questions or 'exit' to quit")
-	color.HiBlack("Tip: Use -c to copy, -x to execute, -e for examples\n")
-
-	for {
-		line, err := rl.Readline()
-		if err != nil {
-			break
+	// Handle execute after TUI exits (if -x was used on last query)
+	if fm, ok := finalModel.(tuiModel); ok {
+		if fm.lastOpts.Execute && fm.state == tuiStateInput {
+			// Re-run the last query to get response and execute
+			resp, err := runQuery(config, fm.lastQuery, false)
+			if err == nil && resp.Command != "" {
+				executeCommand(resp.Command)
+			}
 		}
-
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		if line == "exit" || line == "quit" {
-			color.Cyan("Goodbye! 👋")
-			break
-		}
-
-		// Parse query and flags
-		query, opts, showExamples := parseInteractiveLine(line)
-		if query == "" {
-			continue
-		}
-
-		// Run the query
-		response, err := runQuery(config, query, showExamples)
-		if err != nil {
-			color.Red("Error: %v", err)
-			continue
-		}
-
-		// Handle the response
-		fmt.Println()
-		handleResponse(config, query, response, opts)
-		fmt.Println()
 	}
+
+	fmt.Println("Goodbye!")
 }

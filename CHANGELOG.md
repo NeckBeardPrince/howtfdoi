@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-04-06
+
+### Added
+
+- **Bubbletea TUI for interactive mode**: Replaced the `readline` REPL with a full Charm stack interactive UI
+  - Scrollable conversation viewport with full history
+  - Non-blocking async AI queries with a spinner while waiting for responses
+  - Alt-screen mode for a clean full-terminal experience that restores on exit
+  - Lipgloss-styled output: bold green commands, white explanations, colored prompts and hints
+  - Inline flags (`-c`, `-x`, `-e`) still supported inside the TUI input
+- **Markdown stripping**: AI responses are now cleaned of backtick fences and inline backtick wrapping before display
+
+### Changed
+
+- System prompts now explicitly prohibit markdown and backtick-wrapped output to reduce fence noise from the AI
+- Removed `github.com/chzyer/readline` dependency (replaced by `github.com/charmbracelet/bubbletea`)
+
+### Dependencies
+
+- Added `github.com/charmbracelet/bubbletea` v1.3.10
+- Added `github.com/charmbracelet/bubbles` v1.0.0
+- Added `github.com/charmbracelet/lipgloss` v1.1.0
+- Removed `github.com/chzyer/readline`
+
 ## [1.0.9] - 2026-02-12
 
 ### Added
@@ -185,6 +209,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confirmation prompts before command execution
 - API key validation on startup
 
+[1.0.10]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.6...v1.0.7
