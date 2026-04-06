@@ -248,7 +248,90 @@ func NewLMStudioProvider(baseURL, model string) *LMStudioProvider {
 	}
 }
 
+// completionBash returns a bash completion script for howtfdoi.
+func completionBash() string {
+	return `# bash completion for howtfdoi
+_howtfdoi() {
+    local cur prev
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    local flags="-c -e -x -v --version --help"
+
+    case "${cur}" in
+        -*)
+            COMPREPLY=($(compgen -W "${flags}" -- "${cur}"))
+            return 0
+            ;;
+    esac
+
+    COMPREPLY=()
+}
+
+complete -F _howtfdoi howtfdoi
+`
+}
+
+// completionZsh returns a zsh completion script for howtfdoi.
+func completionZsh() string {
+	return `#compdef howtfdoi
+
+_howtfdoi() {
+    _arguments \
+        '-c[Copy command to clipboard]' \
+        '-e[Show multiple examples]' \
+        '-x[Execute the command directly]' \
+        '-v[Enable verbose logging]' \
+        '--version[Show version information]' \
+        '--help[Show help]' \
+        '*:query: '
+}
+
+_howtfdoi "$@"
+`
+}
+
+// completionFish returns a fish completion script for howtfdoi.
+func completionFish() string {
+	return `# fish completion for howtfdoi
+complete -c howtfdoi -f
+complete -c howtfdoi -s c -d 'Copy command to clipboard'
+complete -c howtfdoi -s e -d 'Show multiple examples'
+complete -c howtfdoi -s x -d 'Execute the command directly'
+complete -c howtfdoi -s v -d 'Enable verbose logging'
+complete -c howtfdoi -l version -d 'Show version information'
+complete -c howtfdoi -l help -d 'Show help'
+complete -c howtfdoi -n '__fish_is_first_arg' -d 'Ask a CLI question in plain English'
+`
+}
+
+// runCompletion prints the shell completion script for the requested shell.
+func runCompletion(shell string) {
+	switch strings.ToLower(shell) {
+	case "bash":
+		fmt.Print(completionBash())
+	case "zsh":
+		fmt.Print(completionZsh())
+	case "fish":
+		fmt.Print(completionFish())
+	default:
+		fmt.Fprintf(os.Stderr, "Error: unknown shell %q — supported: bash, zsh, fish\n", shell)
+		os.Exit(1)
+	}
+}
+
 func main() {
+	// Handle `howtfdoi completion <shell>` before flag parsing so it works
+	// without an API key (goreleaser calls this at release time).
+	if len(os.Args) == 3 && os.Args[1] == "completion" {
+		runCompletion(os.Args[2])
+		os.Exit(0)
+	}
+	if len(os.Args) == 2 && os.Args[1] == "completion" {
+		fmt.Fprintf(os.Stderr, "Usage: howtfdoi completion <bash|zsh|fish>\n")
+		os.Exit(1)
+	}
+
 	// Customize help output to include version information
 	flag.Usage = func() {
 		fmt.Printf("howtfdoi version %s\n", version)
@@ -267,7 +350,8 @@ func main() {
 
 		fmt.Fprintf(os.Stderr, "USAGE:\n")
 		fmt.Fprintf(os.Stderr, "  howtfdoi [flags] <query>\n")
-		fmt.Fprintf(os.Stderr, "  howtfdoi              (interactive mode)\n\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi              (interactive mode)\n")
+		fmt.Fprintf(os.Stderr, "  howtfdoi completion <bash|zsh|fish>\n\n")
 
 		fmt.Fprintf(os.Stderr, "FLAGS:\n")
 		flag.PrintDefaults()
