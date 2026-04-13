@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.11] - 2026-04-13
+## [1.0.14] - 2026-04-13
 
 ### Changed
 
@@ -55,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **LM Studio Support**: Use local AI models via LM Studio for completely private, offline, free inference
   - New `lmstudio` provider option alongside `anthropic` and `openai`
   - `LMStudioProvider` embeds `OpenAIProvider` (no code duplication) since LM Studio uses an OpenAI-compatible API
-  - Environment variables: `LMSTUDIO_BASE_URL` (default: http://localhost:1234/v1) and `LMSTUDIO_MODEL` (default: local-model)
+  - Environment variables: `LMSTUDIO_BASE_URL` (default: <http://localhost:1234/v1>) and `LMSTUDIO_MODEL` (default: local-model)
   - Config file fields: `lmstudio_base_url` and `lmstudio_model`
   - First-run setup wizard now includes LM Studio as option 3
   - No API key required — works entirely locally
