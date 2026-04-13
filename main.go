@@ -16,14 +16,14 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/atotto/clipboard"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/fatih/color"
 	"github.com/mattn/go-isatty"
 	openai "github.com/sashabaranov/go-openai"
@@ -1055,7 +1055,7 @@ func newTUIModel(config Config) tuiModel {
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 
-	vp := viewport.New(80, 20)
+	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 	vp.SetContent("")
 
 	return tuiModel{
@@ -1090,11 +1090,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyCtrlD:
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "ctrl+c", "ctrl+d":
 			return m, tea.Quit
-		case tea.KeyEnter:
+		case "enter":
 			if m.state != tuiStateInput {
 				break
 			}
@@ -1123,8 +1123,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.textarea.SetWidth(msg.Width - 4)
-		m.viewport.Width = msg.Width - 4
-		m.viewport.Height = msg.Height - 10
+		m.viewport.SetWidth(msg.Width - 4)
+		m.viewport.SetHeight(msg.Height - 10)
 		m.viewport.SetContent(strings.Join(m.history, "\n\n"))
 
 	case queryResultMsg:
@@ -1196,9 +1196,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m tuiModel) View() string {
+func (m tuiModel) View() tea.View {
 	if m.width == 0 {
-		return "Loading..."
+		return tea.NewView("Loading...")
 	}
 
 	hint := m.styleHint.Render("Flags: -c copy  -x execute  -e examples  |  Ctrl+D or 'exit' to quit")
@@ -1213,18 +1213,21 @@ func (m tuiModel) View() string {
 	vpView := m.styleBorder.Width(m.width - 4).Render(m.viewport.View())
 	taView := m.styleBorder.Width(m.width - 4).Render(m.textarea.View())
 
-	return lipgloss.JoinVertical(lipgloss.Left,
+	content := lipgloss.JoinVertical(lipgloss.Left,
 		vpView,
 		"",
 		statusLine,
 		taView,
 		hint,
 	)
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }
 
 func runInteractiveMode(config Config) {
 	m := newTUIModel(config)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m)
 
 	finalModel, err := p.Run()
 	if err != nil {
