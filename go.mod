@@ -5,9 +5,9 @@ go 1.25.2
 require (
 	github.com/anthropics/anthropic-sdk-go v1.35.0
 	github.com/atotto/clipboard v0.1.4
-	github.com/charmbracelet/bubbles/v2 v2.1.0
-	github.com/charmbracelet/bubbletea/v2 v2.0.2
-	github.com/charmbracelet/lipgloss/v2 v2.0.2
+	github.com/charmbracelet/bubbles v1.0.0
+	github.com/charmbracelet/bubbletea v1.3.10
+	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/fatih/color v1.19.0
 	github.com/mattn/go-isatty v0.0.21
 	github.com/sashabaranov/go-openai v1.41.2
