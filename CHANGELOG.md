@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.11] - 2026-04-13
+
+### Changed
+
+- **Charmbracelet v2 migration**: Updated the TUI stack to use the v2 APIs across bubbletea, bubbles, and lipgloss
+  - Import paths migrated from `github.com/charmbracelet/...` to `charm.land/.../v2` vanity domain
+  - `View()` now returns `tea.View` (declarative) instead of `string`; `AltScreen` declared in view instead of as a program option
+  - Key handling updated from `tea.KeyMsg`/`msg.Type` constants to `tea.KeyPressMsg`/`msg.String()` string matching
+  - Viewport constructor updated to `viewport.New(viewport.WithWidth(...), viewport.WithHeight(...))` with setter methods
+  - `tea.WithAltScreen()` program option removed (now declared via `v.AltScreen = true` in `View()`)
+
+### Dependencies
+
+- Upgraded `github.com/charmbracelet/bubbles` v1.0.0 → `charm.land/bubbles/v2` v2.1.0
+- Upgraded `github.com/charmbracelet/bubbletea` v1.3.10 → `charm.land/bubbletea/v2` v2.0.4
+- Upgraded `github.com/charmbracelet/lipgloss` v1.1.0 → `charm.land/lipgloss/v2` v2.0.3
+
 ## [1.0.10] - 2026-04-06
 
 ### Added
