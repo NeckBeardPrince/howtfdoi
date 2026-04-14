@@ -124,8 +124,8 @@ type Config struct {
 
 // Response holds the parsed response.
 // Kind distinguishes a single-answer reply (one command + explanation) from
-// an examples-mode reply (multiple "# title" blocks). Command/Explanation are
-// only populated for single-answer responses; examples responses must be
+// an examples-mode reply (one or more "# title" blocks). Command/Explanation
+// are only populated for single-answer responses; examples responses must be
 // rendered from FullText.
 type Response struct {
 	Kind        ResponseKind
@@ -139,7 +139,7 @@ type ResponseKind int
 
 const (
 	ResponseSingle   ResponseKind = iota // single command + explanation
-	ResponseExamples                     // multiple "# title" example blocks
+	ResponseExamples                     // one or more "# title" example blocks
 )
 
 // ResponseOptions holds options for processing responses
@@ -948,7 +948,7 @@ func stripMarkdown(text string) string {
 //   - First non-empty line: the actual command
 //   - Remaining lines: explanation/context
 //
-// Examples-mode responses (multiple "# title" blocks) are flagged with
+// Examples-mode responses (one or more "# title" blocks) are flagged with
 // Kind=ResponseExamples and Command/Explanation are intentionally left empty
 // so downstream features (copy, execute, safety warnings) don't act on a title
 // line. Renderers must use FullText for examples output.

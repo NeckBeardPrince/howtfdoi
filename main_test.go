@@ -88,20 +88,19 @@ func TestParseResponseExamples(t *testing.T) {
 	}
 }
 
-// Test that examples-mode output does not trigger clipboard copy or execute
-// in handleResponse, because Command is empty.
-func TestHandleResponseExamplesSkipsCommandActions(t *testing.T) {
-	// renderExamples writes to stdout via fatih/color; we only care that the
-	// Command-gated branches don't run. Reuse parseResponse to build the input.
+// Test the parse-level invariant that examples-mode responses leave Command
+// empty. Downstream consumers (handleResponse, TUI render path) all gate
+// clipboard copy / execute / danger scanning on Command != "", so keeping it
+// empty is what prevents those side effects from acting on a "# title" line.
+// This test locks in that invariant at the parse layer; the consumer-side
+// gating is verified by code review rather than a stubbed integration test.
+func TestParseResponseExamplesLeavesCommandEmpty(t *testing.T) {
 	resp := parseResponse("# Title\ncmd\nExplanation")
 	if resp.Kind != ResponseExamples {
 		t.Skip("examples detection regressed; covered by TestParseResponseExamples")
 	}
-	// Command is empty → isDangerous("") returns false, copy and execute no-op.
-	// A regression here would surface as a panic or stdout assertion failure
-	// in a future integration test; this test locks in the invariant.
 	if resp.Command != "" {
-		t.Fatalf("examples response must have empty Command, got %q", resp.Command)
+		t.Fatalf("parseResponse() examples response must have empty Command, got %q", resp.Command)
 	}
 }
 
@@ -452,7 +451,8 @@ func BenchmarkIsDangerous(b *testing.B) {
 }
 
 // blockingMockProvider waits for the context to be cancelled and returns the
-// context error. Lets us exercise real timeout behavior without hitting an API.
+// context error. Lets us exercise the cancellation contract without hitting
+// a real API.
 type blockingMockProvider struct{}
 
 func (m *blockingMockProvider) Query(ctx context.Context, query, platform string, examples bool) (string, error) {
@@ -460,9 +460,14 @@ func (m *blockingMockProvider) Query(ctx context.Context, query, platform string
 	return "", ctx.Err()
 }
 
-// Test timeout handling for API calls: a context with a short deadline should
-// cause the provider to return context.DeadlineExceeded.
-func TestQueryTimeout(t *testing.T) {
+// TestProviderRespectsContextCancellation verifies the provider-layer contract:
+// when the caller's context deadline elapses, a Provider.Query implementation
+// must return context.DeadlineExceeded (or honor ctx.Err() generally).
+//
+// NOTE: this is a contract test for Provider implementations; it does NOT
+// assert that the app imposes a request-level timeout on live provider calls.
+// Adding a configurable timeout in runQuery is tracked separately.
+func TestProviderRespectsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
 
@@ -470,7 +475,7 @@ func TestQueryTimeout(t *testing.T) {
 
 	_, err := mock.Query(ctx, "test", "darwin", false)
 	if err == nil {
-		t.Fatal("expected timeout error, got nil")
+		t.Fatal("expected context error, got nil")
 	}
 	if err != context.DeadlineExceeded {
 		t.Fatalf("expected %v, got %v", context.DeadlineExceeded, err)
