@@ -2,3 +2,13 @@
 howtfdoi
 coverage.txt
 howtfdoi-*
+session-*
+
+# Demo files
+demo.gif
+demo-optimized.gif
+assets/*.gif
+
+# Test artifacts
+*.out
+*.test

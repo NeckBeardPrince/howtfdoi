@@ -47,10 +47,15 @@ const (
 	providerOpenAI    = "openai"
 	providerChatGPT   = "chatgpt" // alias for openai
 	providerLMStudio  = "lmstudio"
+	providerOllama    = "ollama"
 
 	// LM Studio defaults
 	defaultLMStudioBaseURL = "http://localhost:1234/v1"
 	defaultLMStudioModel   = "local-model"
+
+	// Ollama defaults
+	defaultOllamaBaseURL = "http://localhost:11434/v1"
+	defaultOllamaModel   = "llama3.2"
 )
 
 var (
@@ -91,6 +96,8 @@ type FileConfig struct {
 	OpenAIKey       string `yaml:"openai_api_key,omitempty"`
 	LMStudioBaseURL string `yaml:"lmstudio_base_url,omitempty"`
 	LMStudioModel   string `yaml:"lmstudio_model,omitempty"`
+	OllamaBaseURL   string `yaml:"ollama_base_url,omitempty"`
+	OllamaModel     string `yaml:"ollama_model,omitempty"`
 }
 
 // Config holds runtime configuration
@@ -99,9 +106,11 @@ type Config struct {
 	HistoryFile     string
 	Platform        string
 	Verbose         bool
-	Provider        string // "anthropic", "openai", or "lmstudio"
+	Provider        string // "anthropic", "openai", "lmstudio", or "ollama"
 	LMStudioBaseURL string
 	LMStudioModel   string
+	OllamaBaseURL   string
+	OllamaModel     string
 }
 
 // Response holds the parsed response
@@ -241,6 +250,24 @@ func NewLMStudioProvider(baseURL, model string) *LMStudioProvider {
 	config := openai.DefaultConfig("")
 	config.BaseURL = baseURL
 	return &LMStudioProvider{
+		OpenAIProvider: &OpenAIProvider{
+			client: openai.NewClientWithConfig(config),
+			model:  model,
+		},
+	}
+}
+
+// OllamaProvider implements Provider for Ollama's local OpenAI-compatible API.
+// Embeds OpenAIProvider since Ollama speaks the same protocol.
+type OllamaProvider struct {
+	*OpenAIProvider
+}
+
+// NewOllamaProvider creates a new Ollama provider with a custom base URL.
+func NewOllamaProvider(baseURL, model string) *OllamaProvider {
+	config := openai.DefaultConfig("")
+	config.BaseURL = baseURL
+	return &OllamaProvider{
 		OpenAIProvider: &OpenAIProvider{
 			client: openai.NewClientWithConfig(config),
 			model:  model,
@@ -458,6 +485,26 @@ func resolveLMStudioConfig(fileConfig FileConfig) (baseURL, model string) {
 	return
 }
 
+// resolveOllamaConfig resolves Ollama base URL and model from env vars, config file, then defaults.
+func resolveOllamaConfig(fileConfig FileConfig) (baseURL, model string) {
+	baseURL = os.Getenv("OLLAMA_BASE_URL")
+	if baseURL == "" {
+		baseURL = fileConfig.OllamaBaseURL
+	}
+	if baseURL == "" {
+		baseURL = defaultOllamaBaseURL
+	}
+
+	model = os.Getenv("OLLAMA_MODEL")
+	if model == "" {
+		model = fileConfig.OllamaModel
+	}
+	if model == "" {
+		model = defaultOllamaModel
+	}
+	return
+}
+
 func setupConfig(verbose bool) Config {
 	dataDir := getDataDirectory()
 	configDir := getConfigDirectory()
@@ -485,6 +532,7 @@ func setupConfig(verbose bool) Config {
 	provider := strings.ToLower(os.Getenv("HOWTFDOI_AI_PROVIDER"))
 	var apiKey string
 	var lmStudioBaseURL, lmStudioModel string
+	var ollamaBaseURL, ollamaModel string
 
 	switch provider {
 	case providerOpenAI, providerChatGPT:
@@ -501,6 +549,8 @@ func setupConfig(verbose bool) Config {
 		}
 	case providerLMStudio:
 		lmStudioBaseURL, lmStudioModel = resolveLMStudioConfig(fileConfig)
+	case providerOllama:
+		ollamaBaseURL, ollamaModel = resolveOllamaConfig(fileConfig)
 	case "":
 		// No env var set — check config file provider, then auto-detect
 		if fileConfig.Provider != "" {
@@ -518,6 +568,8 @@ func setupConfig(verbose bool) Config {
 			}
 		case providerLMStudio:
 			lmStudioBaseURL, lmStudioModel = resolveLMStudioConfig(fileConfig)
+		case providerOllama:
+			ollamaBaseURL, ollamaModel = resolveOllamaConfig(fileConfig)
 		default:
 			provider = providerAnthropic
 			apiKey = os.Getenv("ANTHROPIC_API_KEY")
@@ -544,8 +596,8 @@ func setupConfig(verbose bool) Config {
 		}
 	}
 
-	// If still no API key (and not LM Studio) and stdin is a terminal, run first-time setup
-	if apiKey == "" && provider != providerLMStudio && isatty.IsTerminal(os.Stdin.Fd()) {
+	// If still no API key (and not LM Studio/Ollama) and stdin is a terminal, run first-time setup
+	if apiKey == "" && provider != providerLMStudio && provider != providerOllama && isatty.IsTerminal(os.Stdin.Fd()) {
 		fc, err := runFirstTimeSetup()
 		if err != nil {
 			color.Red("Error during setup: %v", err)
@@ -558,6 +610,8 @@ func setupConfig(verbose bool) Config {
 			apiKey = fc.OpenAIKey
 		case providerLMStudio:
 			lmStudioBaseURL, lmStudioModel = resolveLMStudioConfig(fc)
+		case providerOllama:
+			ollamaBaseURL, ollamaModel = resolveOllamaConfig(fc)
 		default:
 			provider = providerAnthropic
 			apiKey = fc.AnthropicKey
@@ -569,6 +623,9 @@ func setupConfig(verbose bool) Config {
 		if provider == providerLMStudio {
 			color.Cyan("LM Studio base URL: %s", lmStudioBaseURL)
 			color.Cyan("LM Studio model: %s", lmStudioModel)
+		} else if provider == providerOllama {
+			color.Cyan("Ollama base URL: %s", ollamaBaseURL)
+			color.Cyan("Ollama model: %s", ollamaModel)
 		}
 	}
 
@@ -580,6 +637,8 @@ func setupConfig(verbose bool) Config {
 		Provider:        provider,
 		LMStudioBaseURL: lmStudioBaseURL,
 		LMStudioModel:   lmStudioModel,
+		OllamaBaseURL:   ollamaBaseURL,
+		OllamaModel:     ollamaModel,
 	}
 }
 
@@ -678,7 +737,8 @@ func runFirstTimeSetup() (FileConfig, error) {
 	fmt.Println("  1. Anthropic (Claude) — default")
 	fmt.Println("  2. OpenAI (ChatGPT)")
 	fmt.Println("  3. LM Studio (Local)")
-	fmt.Print("Enter 1, 2, or 3 [1]: ")
+	fmt.Println("  4. Ollama (Local)")
+	fmt.Print("Enter 1, 2, 3, or 4 [1]: ")
 
 	choice, _ := reader.ReadString('\n')
 	choice = strings.TrimSpace(choice)
@@ -689,6 +749,8 @@ func runFirstTimeSetup() (FileConfig, error) {
 		fc.Provider = providerOpenAI
 	case "3":
 		fc.Provider = providerLMStudio
+	case "4":
+		fc.Provider = providerOllama
 	default:
 		fc.Provider = providerAnthropic
 	}
@@ -722,6 +784,25 @@ func runFirstTimeSetup() (FileConfig, error) {
 			model = defaultLMStudioModel
 		}
 		fc.LMStudioModel = model
+	case providerOllama:
+		fmt.Println("\nOllama runs locally — no API key needed.")
+		fmt.Println("Make sure Ollama is running with a model pulled.")
+		fmt.Println("Install Ollama at: https://ollama.ai/")
+		fmt.Printf("\nEnter Ollama server URL [%s]: ", defaultOllamaBaseURL)
+		baseURL, _ := reader.ReadString('\n')
+		baseURL = strings.TrimSpace(baseURL)
+		if baseURL == "" {
+			baseURL = defaultOllamaBaseURL
+		}
+		fc.OllamaBaseURL = baseURL
+
+		fmt.Printf("Enter model name [%s]: ", defaultOllamaModel)
+		model, _ := reader.ReadString('\n')
+		model = strings.TrimSpace(model)
+		if model == "" {
+			model = defaultOllamaModel
+		}
+		fc.OllamaModel = model
 	default:
 		fmt.Println("\nGet your API key at: https://console.anthropic.com/settings/keys")
 		fmt.Print("Enter your Anthropic API key: ")
@@ -756,6 +837,8 @@ func runQuery(config Config, query string, showExamples bool) (*Response, error)
 		provider = NewAnthropicProvider(config.APIKey)
 	case providerLMStudio:
 		provider = NewLMStudioProvider(config.LMStudioBaseURL, config.LMStudioModel)
+	case providerOllama:
+		provider = NewOllamaProvider(config.OllamaBaseURL, config.OllamaModel)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", config.Provider)
 	}
