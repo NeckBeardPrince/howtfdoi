@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.16] - 2026-04-14
+
+Fixes from the v1.0.15 Copilot review ([PR #70][pr70]).
+
+### Fixed
+
+- **Ollama lockout**: Selecting the `ollama` provider no longer exits with "no API key found". The API-key gate in `main()` now uses a shared `providerRequiresAPIKey()` helper, so local providers (LM Studio + Ollama) are exempted consistently across first-run setup and the startup validation path.
+- **Examples mode (`-e`) parse regression**: `parseResponse` now tags responses with a `Kind` field (`ResponseSingle` / `ResponseExamples`) and leaves `Command`/`Explanation` empty for examples output. This prevents `-c` from copying a `# title` line, `-x` from "executing" a title, and `isDangerous()` from flagging title lines. The CLI and TUI render examples via dedicated renderers.
+- **`TestQueryTimeout` was a no-op**: Replaced the immediately-returning mock with a `blockingMockProvider` that waits on `ctx.Done()` and returns `ctx.Err()`, so the test actually validates `context.DeadlineExceeded`.
+- **Config-permission test was not Windows-portable**: Gated the `0600` permission assertion on `runtime.GOOS != "windows"` so `go test ./...` passes on Windows runners.
+
+### Changed
+
+- **Demo tape uses `bash` instead of `fish`**: `scripts/demo.tape` no longer requires fish to be installed; `record_demo.sh` now reads the `Output` path from the tape so the success message and optimization commands point at the actual `assets/demo.gif` path.
+- **Codecov action SHA-pinned**: `.github/workflows/ci.yml` pins `codecov/codecov-action` to a commit SHA (v6.0.0) to match the supply-chain hardening of the other actions.
+
+### Added
+
+- **Examples-mode test coverage**: New `TestParseResponseExamples` and `TestHandleResponseExamplesSkipsCommandActions` tests lock in the parse-kind invariant so a future refactor can't silently regress `-e` behavior.
+
+[pr70]: https://github.com/NeckBeardPrince/howtfdoi/pull/70
+
 ## [1.0.15] - 2026-04-14
 
 ### Added
@@ -254,6 +276,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confirmation prompts before command execution
 - API key validation on startup
 
+[1.0.16]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.15...v1.0.16
 [1.0.15]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.14...v1.0.15
 [1.0.14]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.10...v1.0.14
 [1.0.10]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.9...v1.0.10

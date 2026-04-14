@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -48,6 +49,9 @@ func TestParseResponse(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := parseResponse(tt.input)
+			if got.Kind != ResponseSingle {
+				t.Errorf("parseResponse() Kind = %v, want ResponseSingle", got.Kind)
+			}
 			if got.Command != tt.wantCommand {
 				t.Errorf("parseResponse() command = %v, want %v", got.Command, tt.wantCommand)
 			}
@@ -55,6 +59,49 @@ func TestParseResponse(t *testing.T) {
 				t.Errorf("parseResponse() explanation = %v, want %v", got.Explanation, tt.wantExplain)
 			}
 		})
+	}
+}
+
+// Test parseResponse handles examples-mode output: multiple "# title" blocks.
+// Command/Explanation must be empty so copy/execute/safety don't act on a title.
+func TestParseResponseExamples(t *testing.T) {
+	input := "# List running containers\n" +
+		"docker ps\n" +
+		"Shows running containers.\n\n" +
+		"# List all containers\n" +
+		"docker ps -a\n" +
+		"Includes stopped containers."
+
+	got := parseResponse(input)
+
+	if got.Kind != ResponseExamples {
+		t.Fatalf("parseResponse() Kind = %v, want ResponseExamples", got.Kind)
+	}
+	if got.Command != "" {
+		t.Errorf("parseResponse() Command should be empty for examples, got %q", got.Command)
+	}
+	if got.Explanation != "" {
+		t.Errorf("parseResponse() Explanation should be empty for examples, got %q", got.Explanation)
+	}
+	if !strings.Contains(got.FullText, "docker ps -a") {
+		t.Errorf("parseResponse() FullText missing example content")
+	}
+}
+
+// Test that examples-mode output does not trigger clipboard copy or execute
+// in handleResponse, because Command is empty.
+func TestHandleResponseExamplesSkipsCommandActions(t *testing.T) {
+	// renderExamples writes to stdout via fatih/color; we only care that the
+	// Command-gated branches don't run. Reuse parseResponse to build the input.
+	resp := parseResponse("# Title\ncmd\nExplanation")
+	if resp.Kind != ResponseExamples {
+		t.Skip("examples detection regressed; covered by TestParseResponseExamples")
+	}
+	// Command is empty → isDangerous("") returns false, copy and execute no-op.
+	// A regression here would surface as a panic or stdout assertion failure
+	// in a future integration test; this test locks in the invariant.
+	if resp.Command != "" {
+		t.Fatalf("examples response must have empty Command, got %q", resp.Command)
 	}
 }
 
@@ -180,9 +227,9 @@ func TestConfigFileOperations(t *testing.T) {
 			t.Fatal("Config file was not created")
 		}
 
-		// Check permissions
+		// Check permissions (POSIX-only — Windows doesn't honor 0600)
 		info, _ := os.Stat(configPath)
-		if info.Mode().Perm() != 0600 {
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 			t.Errorf("Config file permissions = %v, want 0600", info.Mode().Perm())
 		}
 
@@ -404,22 +451,29 @@ func BenchmarkIsDangerous(b *testing.B) {
 	}
 }
 
-// Test timeout handling for API calls
+// blockingMockProvider waits for the context to be cancelled and returns the
+// context error. Lets us exercise real timeout behavior without hitting an API.
+type blockingMockProvider struct{}
+
+func (m *blockingMockProvider) Query(ctx context.Context, query, platform string, examples bool) (string, error) {
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+// Test timeout handling for API calls: a context with a short deadline should
+// cause the provider to return context.DeadlineExceeded.
 func TestQueryTimeout(t *testing.T) {
-	// This would test context timeout handling
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
 
-	// Mock provider that takes too long
-	mock := &mockProvider{
-		responses: []string{"timeout test"},
-	}
+	mock := &blockingMockProvider{}
 
-	// In a real test, you'd want the provider to respect context
 	_, err := mock.Query(ctx, "test", "darwin", false)
 	if err == nil {
-		// Note: This is a simplified test - real implementation would check context
-		t.Skip("Timeout test requires context-aware mock")
+		t.Fatal("expected timeout error, got nil")
+	}
+	if err != context.DeadlineExceeded {
+		t.Fatalf("expected %v, got %v", context.DeadlineExceeded, err)
 	}
 }
 

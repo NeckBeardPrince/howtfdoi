@@ -3,7 +3,7 @@
 
 # Setup
 Output ../assets/demo.gif
-Set Shell fish
+Set Shell bash
 Set Theme "tokyonight-storm"
 Set WindowBar Colorful
 Set Framerate 60
