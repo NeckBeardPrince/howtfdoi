@@ -13,7 +13,7 @@ Set FontFamily "JetBrainsMono Nerd Font"
 Set Width 1200
 Set Height 800
 Set Padding 20
-Set TypingSpeed 100ms
+Set TypingSpeed 50ms
 Set LineHeight 1.4
 
 # Start recording
@@ -41,7 +41,7 @@ Show
 Sleep 1.5s
 Type "howtfdoi -c find large files"
 Enter
-Sleep 3.5s
+Sleep 4.5s
 
 Hide
 Type "clear"
@@ -52,7 +52,7 @@ Show
 Sleep 1.5s
 Type "howtfdoi -e compress files with tar"
 Enter
-Sleep 3.5s
+Sleep 6s
 
 Hide
 Type "clear"
@@ -62,7 +62,7 @@ Show
 Sleep 1.5s
 Type "howtfdoi -e copy a file from my local to a Kubernetes pod?"
 Enter
-Sleep 3.5s
+Sleep 4.5s
 
 Hide
 Type "clear"
