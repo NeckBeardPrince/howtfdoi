@@ -9,24 +9,8 @@ on:
     branches: [main]
 
 jobs:
-  # lint:
-  #   name: Lint
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-  #
-  #     - name: Set up Go
-  #       uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
-  #       with:
-  #         go-version: "1.25"
-  #
-  #     - name: golangci-lint
-  #       uses: golangci/golangci-lint-action@v4
-  #       with:
-  #         version: latest
-
-  build:
-    name: Build
+  test:
+    name: Test
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -41,73 +25,11 @@ jobs:
         with:
           go-version: "1.26"
 
-      - name: Build
-        run: go build -v -o howtfdoi
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
         with:
-          name: howtfdoi-linux
-          path: howtfdoi
-
-  # test:
-  #   name: Test
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-  #
-  #     - name: Set up Go
-  #       uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
-  #       with:
-  #         go-version: "1.25"
-  #
-  #     - name: Run tests
-  #       run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
-  #
-  #     - name: Upload coverage
-  #       uses: codecov/codecov-action@v4
-  #       with:
-  #         files: ./coverage.txt
-  #         fail_ci_if_error: false
-
-  cross-compile:
-    name: Cross Compile
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - os: linux
-            arch: amd64
-          - os: linux
-            arch: arm64
-          - os: darwin
-            arch: amd64
-          - os: darwin
-            arch: arm64
-          - os: windows
-            arch: amd64
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
-        with:
-          go-version: "1.26"
-
-      - name: Build ${{ matrix.os }}-${{ matrix.arch }}
-        env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
-        run: |
-          go build -v -o howtfdoi-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: howtfdoi-${{ matrix.os }}-${{ matrix.arch }}
-          path: howtfdoi-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}
+          files: ./coverage.txt
+          fail_ci_if_error: false

@@ -42,4 +42,3 @@ jobs:
           retry-on-snapshot-warnings: true
         #   fail-on-severity: moderate
         #   deny-licenses: GPL-1.0-or-later, LGPL-2.0-or-later
-          

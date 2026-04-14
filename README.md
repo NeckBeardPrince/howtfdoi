@@ -1,5 +1,9 @@
 # howtfdoi
 
+[![CI](https://github.com/NeckBeardPrince/howtfdoi/actions/workflows/ci.yml/badge.svg)](https://github.com/NeckBeardPrince/howtfdoi/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/NeckBeardPrince/howtfdoi)](https://goreportcard.com/report/github.com/NeckBeardPrince/howtfdoi)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 **Instant coding answers via the command line** - powered by AI
 
 Forget scrolling through Stack Overflow or man pages. Just ask.
@@ -8,7 +12,7 @@ Ask CLI questions in plain English and get instant answers powered by Claude, Ch
 
 ## Features
 
-- 🤖 **Multiple AI providers** - Choose between Claude (Anthropic), ChatGPT (OpenAI), or LM Studio (local)
+- 🤖 **Multiple AI providers** - Choose between Claude (Anthropic), ChatGPT (OpenAI), LM Studio, or Ollama (both local)
 - 🎨 **Color-coded output** - Commands in green, explanations in gray
 - 📋 **Copy to clipboard** - One flag to copy commands instantly
 - ⚡ **Direct execution** - Run commands with confirmation
@@ -21,7 +25,26 @@ Ask CLI questions in plain English and get instant answers powered by Claude, Ch
 - ⚡ **Blazing fast** - Uses prompt caching for speed
 - 🔧 **Config file** - Persist API keys and provider in `~/.config/howtfdoi/howtfdoi.yaml`
 - 🧙 **First-run setup** - Interactive wizard configures your API key on first use
-- 🏠 **Local AI support** - Use LM Studio for completely local, private, free AI
+- 🏠 **Local AI support** - Use LM Studio or Ollama for completely local, private, free AI
+
+## Demo
+
+![howtfdoi demo](./assets/demo.gif)
+
+## Performance
+
+howtfdoi is optimized for speed with:
+
+- **Streaming responses** - See output as it's generated
+- **Prompt caching** - Reuse system prompts (Anthropic)
+- **Pre-compiled regex** - Fast dangerous command detection
+- **Single binary** - No runtime dependencies
+
+Run benchmarks:
+
+```bash
+go test -bench=. -benchmem
+```
 
 ## Installation
 
@@ -96,6 +119,30 @@ lmstudio_base_url: http://localhost:1234/v1
 lmstudio_model: local-model
 ```
 
+### Option 4: Ollama (Local)
+
+Another way to run AI models locally — simple, fast, and private.
+
+1. Install [Ollama](https://ollama.ai/)
+2. Pull a model: `ollama pull llama3.2` or `ollama pull qwen2.5-coder:7b`
+3. Ollama runs automatically when you use it
+4. Configure howtfdoi:
+
+```bash
+export HOWTFDOI_AI_PROVIDER=ollama
+# Optional: customize base URL and model name
+export OLLAMA_BASE_URL='http://localhost:11434/v1'
+export OLLAMA_MODEL='llama3.2'
+```
+
+Or add to your config file:
+
+```yaml
+provider: ollama
+ollama_base_url: http://localhost:11434/v1
+ollama_model: llama3.2
+```
+
 ### Config File
 
 API keys and provider preference are stored in a YAML config file:
@@ -111,6 +158,10 @@ openai_api_key: sk-...
 # provider: lmstudio
 # lmstudio_base_url: http://localhost:1234/v1
 # lmstudio_model: local-model
+# For Ollama (local):
+# provider: ollama
+# ollama_base_url: http://localhost:11434/v1
+# ollama_model: llama3.2
 ```
 
 A `.gitignore` is automatically created in the config directory to prevent accidental commits.
@@ -150,6 +201,7 @@ HOWTFDOI_AI_PROVIDER=chatgpt howtfdoi list files
 ```
 
 If you don't set `HOWTFDOI_AI_PROVIDER`, the tool will:
+
 1. Use Anthropic if `ANTHROPIC_API_KEY` is set (env or config)
 2. Fall back to OpenAI if only `OPENAI_API_KEY` is set
 3. Use OpenAI if both keys are set but you specify the provider
@@ -284,6 +336,7 @@ Saved to history: /Users/you/.local/state/howtfdoi/history.log
 ```
 
 Verbose mode shows:
+
 - Data directory location on startup
 - Config file path
 - Active AI provider
@@ -326,12 +379,56 @@ howtfdoi test network connection
 ## Why howtfdoi?
 
 - **Blazing fast**: Uses fast models (Claude Haiku or GPT-4o-mini) with streaming + prompt caching
-- **Flexible**: Choose between Claude, ChatGPT, or local LM Studio
+- **Flexible**: Choose between Claude, ChatGPT, or local LM Studio/Ollama
 - **Natural language**: Ask questions the way you think
 - **CLI focused**: Specialized for command-line tools
 - **No browser needed**: Everything in your terminal
 - **Smart features**: Copy, execute, examples, history - all built-in
 - **Safe**: Warns about dangerous commands before you run them
+
+## How is this different from howdoi?
+
+`howtfdoi` was inspired by the excellent [howdoi](https://github.com/gleitz/howdoi) project but takes a fundamentally different approach:
+
+### Key Differences
+
+| Feature                | howtfdoi                                  | howdoi                               |
+| ---------------------- | ----------------------------------------- | ------------------------------------ |
+| **Data Source**        | AI models (Claude, ChatGPT, local)        | Stack Overflow scraping              |
+| **Answer Quality**     | Context-aware, generates precise commands | Extracts code blocks from SO answers |
+| **Speed**              | Instant with streaming                    | Depends on web scraping              |
+| **Offline Support**    | ✅ Yes (with LM Studio/Ollama)            | ❌ No                                |
+| **Platform Awareness** | ✅ OS-specific answers                    | ❌ Generic answers                   |
+| **Interactive Mode**   | ✅ Full REPL                              | ❌ Single queries only               |
+| **Safety Warnings**    | ✅ Dangerous command detection            | ❌ No safety checks                  |
+| **Examples Mode**      | ✅ Multiple examples on demand            | ❌ Single answer                     |
+| **Execute Commands**   | ✅ With confirmation                      | ❌ Display only                      |
+| **Maintenance**        | Active development                        | Last update 2+ years ago             |
+
+### Why AI Instead of Stack Overflow?
+
+1. **Fresh answers** - No outdated solutions from 2012
+2. **Context-aware** - Understands your specific question and OS
+3. **Complete solutions** - Not just code snippets without context
+4. **Privacy option** - Run completely local with Ollama/LM Studio
+5. **Natural language** - Ask exactly what you're thinking
+6. **No web scraping** - Reliable, fast, and respectful of SO's terms
+
+### When to Use Each
+
+**Use howtfdoi when:**
+
+- You want precise, tailored commands for your OS
+- You need multiple examples or variations
+- You want to run commands directly
+- You prefer AI-generated answers
+- You want offline/local capability
+
+**Use howdoi when:**
+
+- You specifically want Stack Overflow answers
+- You prefer human-written solutions
+- You want to see the source SO thread
 
 ## Advanced Tips
 

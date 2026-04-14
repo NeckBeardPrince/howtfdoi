@@ -2,3 +2,8 @@
 howtfdoi
 coverage.txt
 howtfdoi-*
+session-*
+
+# Test artifacts
+*.out
+*.test

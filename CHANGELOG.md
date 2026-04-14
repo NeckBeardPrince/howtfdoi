@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.15] - 2026-04-14
+
+### Added
+
+- **Ollama support**: New local AI provider alongside LM Studio for private, offline inference
+  - Integrated into config, first-run setup wizard, and runtime via the OpenAI-compatible API
+- **Test suite**: Comprehensive Go tests covering response parsing, dangerous command detection, config load/save, and provider interfaces, plus benchmarks
+- **VHS demo**: Added a polished demo tape
+
+### Changed
+
+- **Examples mode (`-e`) rendering**: Reformatted output to `# title` / command / explanation blocks separated by blank lines
+  - Titles render in bold cyan, commands in bold green, explanations in white
+  - Auto-detected in `displayResponse` via a `#` title prefix — single-answer mode is untouched
+- **CI workflow slimmed to tests-only**: Dropped `build` and `cross-compile` jobs since GoReleaser owns binary builds; kept step-security hardening, race detector, and Codecov upload
+- Bumped Go toolchain target in CI to 1.26
+- Expanded README with an "How is this different from howdoi?" comparison, CI/GitHub badges, performance/benchmark guidance, and Ollama setup docs
+
+### Fixed
+
+- **`tea_debug.log` no longer appears in the cwd**: Resolved upstream in `github.com/charmbracelet/ultraviolet`, which previously had an `init()` that unconditionally opened the file and rerouted the stdlib `log` package. Picked up via `charm.land/bubbletea/v2` v2.0.5 and an ultraviolet bump.
+
+### Dependencies
+
+- Upgraded `charm.land/bubbletea/v2` v2.0.4 → v2.0.5
+- Upgraded `github.com/charmbracelet/ultraviolet` to the patched pseudo-version (`v0.0.0-20260413211237-bd52878bcec2`)
+- Upgraded `github.com/anthropics/anthropic-sdk-go` to v1.35.1
+
 ## [1.0.14] - 2026-04-13
 
 ### Changed
@@ -226,6 +254,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confirmation prompts before command execution
 - API key validation on startup
 
+[1.0.15]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.14...v1.0.15
+[1.0.14]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.10...v1.0.14
 [1.0.10]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.7...v1.0.8
