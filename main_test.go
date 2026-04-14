@@ -92,12 +92,14 @@ func TestParseResponseExamples(t *testing.T) {
 // empty. Downstream consumers (handleResponse, TUI render path) all gate
 // clipboard copy / execute / danger scanning on Command != "", so keeping it
 // empty is what prevents those side effects from acting on a "# title" line.
-// This test locks in that invariant at the parse layer; the consumer-side
-// gating is verified by code review rather than a stubbed integration test.
+//
+// Covers the single "# title" block case, which looksLikeExamples() defines
+// as sufficient to trigger examples-mode. The consumer-side gating is
+// verified by code review rather than a stubbed integration test.
 func TestParseResponseExamplesLeavesCommandEmpty(t *testing.T) {
 	resp := parseResponse("# Title\ncmd\nExplanation")
 	if resp.Kind != ResponseExamples {
-		t.Skip("examples detection regressed; covered by TestParseResponseExamples")
+		t.Fatalf("parseResponse() Kind = %v, want ResponseExamples for a single example block", resp.Kind)
 	}
 	if resp.Command != "" {
 		t.Fatalf("parseResponse() examples response must have empty Command, got %q", resp.Command)

@@ -955,6 +955,7 @@ func stripMarkdown(text string) string {
 func parseResponse(text string) *Response {
 	text = stripMarkdown(text)
 	response := &Response{
+		Kind:     ResponseSingle,
 		FullText: text,
 	}
 
