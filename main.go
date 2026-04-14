@@ -48,6 +48,15 @@ const (
 	providerChatGPT   = "chatgpt" // alias for openai
 	providerLMStudio  = "lmstudio"
 	providerOllama    = "ollama"
+)
+
+// providerRequiresAPIKey reports whether the given provider needs an API key.
+// Local providers (LM Studio, Ollama) run against a local server and never do.
+func providerRequiresAPIKey(name string) bool {
+	return name != providerLMStudio && name != providerOllama
+}
+
+const (
 
 	// LM Studio defaults
 	defaultLMStudioBaseURL = "http://localhost:1234/v1"
@@ -113,12 +122,25 @@ type Config struct {
 	OllamaModel     string
 }
 
-// Response holds the parsed response
+// Response holds the parsed response.
+// Kind distinguishes a single-answer reply (one command + explanation) from
+// an examples-mode reply (one or more "# title" blocks). Command/Explanation
+// are only populated for single-answer responses; examples responses must be
+// rendered from FullText.
 type Response struct {
+	Kind        ResponseKind
 	Command     string
 	Explanation string
 	FullText    string
 }
+
+// ResponseKind classifies a parsed response.
+type ResponseKind int
+
+const (
+	ResponseSingle   ResponseKind = iota // single command + explanation
+	ResponseExamples                     // one or more "# title" example blocks
+)
 
 // ResponseOptions holds options for processing responses
 type ResponseOptions struct {
@@ -425,8 +447,8 @@ func main() {
 	// Setup config
 	config := setupConfig(*verboseFlag)
 
-	// Check API key (LM Studio doesn't need one)
-	if config.APIKey == "" && config.Provider != providerLMStudio {
+	// Check API key (local providers don't need one)
+	if config.APIKey == "" && providerRequiresAPIKey(config.Provider) {
 		configPath := filepath.Join(getConfigDirectory(), configFileName)
 		if config.Provider == providerAnthropic {
 			color.Red("Error: No Anthropic API key found")
@@ -597,7 +619,7 @@ func setupConfig(verbose bool) Config {
 	}
 
 	// If still no API key (and not LM Studio/Ollama) and stdin is a terminal, run first-time setup
-	if apiKey == "" && provider != providerLMStudio && provider != providerOllama && isatty.IsTerminal(os.Stdin.Fd()) {
+	if apiKey == "" && providerRequiresAPIKey(provider) && isatty.IsTerminal(os.Stdin.Fd()) {
 		fc, err := runFirstTimeSetup()
 		if err != nil {
 			color.Red("Error during setup: %v", err)
@@ -925,31 +947,37 @@ func stripMarkdown(text string) string {
 // The expected format is:
 //   - First non-empty line: the actual command
 //   - Remaining lines: explanation/context
+//
+// Examples-mode responses (one or more "# title" blocks) are flagged with
+// Kind=ResponseExamples and Command/Explanation are intentionally left empty
+// so downstream features (copy, execute, safety warnings) don't act on a title
+// line. Renderers must use FullText for examples output.
 func parseResponse(text string) *Response {
 	text = stripMarkdown(text)
-	lines := strings.Split(text, "\n")
 	response := &Response{
+		Kind:     ResponseSingle,
 		FullText: text,
+	}
+
+	if looksLikeExamples(text) {
+		response.Kind = ResponseExamples
+		return response
 	}
 
 	// Filter out empty lines first to simplify parsing
 	var nonEmptyLines []string
-	for _, line := range lines {
+	for _, line := range strings.Split(text, "\n") {
 		if trimmed := strings.TrimSpace(line); trimmed != "" {
 			nonEmptyLines = append(nonEmptyLines, trimmed)
 		}
 	}
 
-	// First non-empty line is the command
 	if len(nonEmptyLines) > 0 {
 		response.Command = nonEmptyLines[0]
 	}
-
-	// Remaining lines are the explanation
 	if len(nonEmptyLines) > 1 {
 		response.Explanation = strings.Join(nonEmptyLines[1:], "\n")
 	}
-
 	return response
 }
 
@@ -958,10 +986,10 @@ func displayResponse(response *Response) {
 	white := color.New(color.FgHiWhite)
 	cyan := color.New(color.FgCyan, color.Bold)
 
-	// Examples mode renders as blocks of "# title / command / explanation",
-	// separated by blank lines. Detect by the presence of a "# " title line
-	// and render with preserved blank lines.
-	if looksLikeExamples(response.FullText) {
+	// Examples-mode renders as blocks of "# title / command / explanation",
+	// separated by blank lines. Command/Explanation are empty for this Kind
+	// so we render directly from FullText.
+	if response.Kind == ResponseExamples {
 		renderExamples(response.FullText, cyan, green, white)
 		return
 	}
@@ -983,6 +1011,36 @@ func looksLikeExamples(text string) bool {
 		}
 	}
 	return false
+}
+
+// renderExamplesLipgloss returns a styled string version of examples output
+// for rendering inside the lipgloss/bubbletea TUI viewport. Same block shape
+// as renderExamples but returns a string instead of writing to stdout.
+func renderExamplesLipgloss(text string, title, cmd, expl lipgloss.Style) string {
+	var out []string
+	blocks := strings.Split(strings.TrimSpace(text), "\n\n")
+	for i, block := range blocks {
+		sawCmd := false
+		for _, line := range strings.Split(block, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				continue
+			}
+			switch {
+			case strings.HasPrefix(trimmed, "# "):
+				out = append(out, title.Render(trimmed))
+			case !sawCmd:
+				out = append(out, cmd.Render(trimmed))
+				sawCmd = true
+			default:
+				out = append(out, expl.Render(trimmed))
+			}
+		}
+		if i < len(blocks)-1 {
+			out = append(out, "")
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // renderExamples prints examples-mode output preserving blank-line separators
@@ -1166,6 +1224,7 @@ type tuiModel struct {
 	stylePrompt   lipgloss.Style
 	styleResponse lipgloss.Style
 	styleCommand  lipgloss.Style
+	styleTitle    lipgloss.Style
 	styleHint     lipgloss.Style
 	styleError    lipgloss.Style
 	styleBorder   lipgloss.Style
@@ -1197,6 +1256,7 @@ func newTUIModel(config Config) tuiModel {
 		stylePrompt:   lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true),
 		styleResponse: lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
 		styleCommand:  lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true),
+		styleTitle:    lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true),
 		styleHint:     lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
 		styleError:    lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
 		styleBorder:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("6")).Padding(0, 1),
@@ -1274,7 +1334,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Build rendered entry
 			var parts []string
 			parts = append(parts, m.stylePrompt.Render("howtfdoi> ")+m.styleHint.Render(msg.query))
-			if msg.response.Command != "" {
+			switch {
+			case msg.response.Kind == ResponseExamples:
+				parts = append(parts, renderExamplesLipgloss(msg.response.FullText, m.styleTitle, m.styleCommand, m.styleResponse))
+			case msg.response.Command != "":
 				parts = append(parts, m.styleCommand.Render(msg.response.Command))
 				if msg.response.Explanation != "" {
 					parts = append(parts, m.styleResponse.Render(msg.response.Explanation))
@@ -1285,7 +1348,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if msg.opts.CopyToClipboard {
 					parts = append(parts, m.styleHint.Render("Copied to clipboard."))
 				}
-			} else {
+			default:
 				parts = append(parts, m.styleResponse.Render(msg.response.FullText))
 			}
 			m.history = append(m.history, strings.Join(parts, "\n"))

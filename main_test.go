@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -48,6 +49,9 @@ func TestParseResponse(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := parseResponse(tt.input)
+			if got.Kind != ResponseSingle {
+				t.Errorf("parseResponse() Kind = %v, want ResponseSingle", got.Kind)
+			}
 			if got.Command != tt.wantCommand {
 				t.Errorf("parseResponse() command = %v, want %v", got.Command, tt.wantCommand)
 			}
@@ -55,6 +59,50 @@ func TestParseResponse(t *testing.T) {
 				t.Errorf("parseResponse() explanation = %v, want %v", got.Explanation, tt.wantExplain)
 			}
 		})
+	}
+}
+
+// Test parseResponse handles examples-mode output: one or more "# title" blocks.
+// Command/Explanation must be empty so copy/execute/safety don't act on a title.
+func TestParseResponseExamples(t *testing.T) {
+	input := "# List running containers\n" +
+		"docker ps\n" +
+		"Shows running containers.\n\n" +
+		"# List all containers\n" +
+		"docker ps -a\n" +
+		"Includes stopped containers."
+
+	got := parseResponse(input)
+
+	if got.Kind != ResponseExamples {
+		t.Fatalf("parseResponse() Kind = %v, want ResponseExamples", got.Kind)
+	}
+	if got.Command != "" {
+		t.Errorf("parseResponse() Command should be empty for examples, got %q", got.Command)
+	}
+	if got.Explanation != "" {
+		t.Errorf("parseResponse() Explanation should be empty for examples, got %q", got.Explanation)
+	}
+	if !strings.Contains(got.FullText, "docker ps -a") {
+		t.Errorf("parseResponse() FullText missing example content")
+	}
+}
+
+// Test the parse-level invariant that examples-mode responses leave Command
+// empty. Downstream consumers (handleResponse, TUI render path) all gate
+// clipboard copy / execute / danger scanning on Command != "", so keeping it
+// empty is what prevents those side effects from acting on a "# title" line.
+//
+// Covers the single "# title" block case, which looksLikeExamples() defines
+// as sufficient to trigger examples-mode. The consumer-side gating is
+// verified by code review rather than a stubbed integration test.
+func TestParseResponseExamplesLeavesCommandEmpty(t *testing.T) {
+	resp := parseResponse("# Title\ncmd\nExplanation")
+	if resp.Kind != ResponseExamples {
+		t.Fatalf("parseResponse() Kind = %v, want ResponseExamples for a single example block", resp.Kind)
+	}
+	if resp.Command != "" {
+		t.Fatalf("parseResponse() examples response must have empty Command, got %q", resp.Command)
 	}
 }
 
@@ -180,9 +228,9 @@ func TestConfigFileOperations(t *testing.T) {
 			t.Fatal("Config file was not created")
 		}
 
-		// Check permissions
+		// Check permissions (POSIX-only — Windows doesn't honor 0600)
 		info, _ := os.Stat(configPath)
-		if info.Mode().Perm() != 0600 {
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 			t.Errorf("Config file permissions = %v, want 0600", info.Mode().Perm())
 		}
 
@@ -404,22 +452,39 @@ func BenchmarkIsDangerous(b *testing.B) {
 	}
 }
 
-// Test timeout handling for API calls
-func TestQueryTimeout(t *testing.T) {
-	// This would test context timeout handling
+// blockingMockProvider waits for the context to be cancelled and returns the
+// context error. Lets us exercise the cancellation contract without hitting
+// a real API.
+type blockingMockProvider struct{}
+
+// Compile-time assertion: blockingMockProvider must satisfy the Provider
+// interface so this test actually tracks the real contract.
+var _ Provider = (*blockingMockProvider)(nil)
+
+func (m *blockingMockProvider) Query(ctx context.Context, systemPrompt, userQuery string) (string, error) {
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+// TestProviderRespectsContextCancellation verifies the provider-layer contract:
+// when the caller's context deadline elapses, a Provider.Query implementation
+// must return context.DeadlineExceeded (or honor ctx.Err() generally).
+//
+// NOTE: this is a contract test for Provider implementations; it does NOT
+// assert that the app imposes a request-level timeout on live provider calls.
+// Adding a configurable timeout in runQuery is tracked separately.
+func TestProviderRespectsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
 
-	// Mock provider that takes too long
-	mock := &mockProvider{
-		responses: []string{"timeout test"},
-	}
+	mock := &blockingMockProvider{}
 
-	// In a real test, you'd want the provider to respect context
-	_, err := mock.Query(ctx, "test", "darwin", false)
+	_, err := mock.Query(ctx, "system prompt", "test query")
 	if err == nil {
-		// Note: This is a simplified test - real implementation would check context
-		t.Skip("Timeout test requires context-aware mock")
+		t.Fatal("expected context error, got nil")
+	}
+	if err != context.DeadlineExceeded {
+		t.Fatalf("expected %v, got %v", context.DeadlineExceeded, err)
 	}
 }
 
