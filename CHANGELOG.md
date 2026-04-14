@@ -14,13 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Ollama support**: New local AI provider alongside LM Studio for private, offline inference
   - Integrated into config, first-run setup wizard, and runtime via the OpenAI-compatible API
 - **Test suite**: Comprehensive Go tests covering response parsing, dangerous command detection, config load/save, and provider interfaces, plus benchmarks
-- **VHS demo**: Added a polished demo tape (Dracula theme, natural typing cadence) and the recorded GIF
+- **VHS demo**: Added a polished demo tape
 
 ### Changed
 
 - **Examples mode (`-e`) rendering**: Reformatted output to `# title` / command / explanation blocks separated by blank lines
   - Titles render in bold cyan, commands in bold green, explanations in white
-  - Auto-detected in `displayResponse` via a `# ` title prefix — single-answer mode is untouched
+  - Auto-detected in `displayResponse` via a `#` title prefix — single-answer mode is untouched
 - **CI workflow slimmed to tests-only**: Dropped `build` and `cross-compile` jobs since GoReleaser owns binary builds; kept step-security hardening, race detector, and Codecov upload
 - Bumped Go toolchain target in CI to 1.26
 - Expanded README with an "How is this different from howdoi?" comparison, CI/GitHub badges, performance/benchmark guidance, and Ollama setup docs
