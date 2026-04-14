@@ -870,15 +870,19 @@ func buildSystemPrompt(platform string, showExamples bool) string {
 			"Rules:\n" +
 			noMarkdownRule + "\n" +
 			"- Show 3-5 different use cases\n" +
-			"- Each example: command on its own line, then explanation in parentheses on the next line\n" +
+			"- Each example: a short title line prefixed with '# ', then the command on the next line, then a brief explanation on the following line\n" +
+			"- Separate each example with a blank line\n" +
 			"- Focus on common, practical scenarios\n\n" +
 			"Example format:\n" +
+			"# Create a compressed tarball\n" +
 			"tar -czf archive.tar.gz directory/\n" +
-			"(Creates a compressed tarball)\n\n" +
+			"Creates a gzip-compressed archive of the directory.\n\n" +
+			"# Extract a compressed tarball\n" +
 			"tar -xzf archive.tar.gz\n" +
-			"(Extracts a compressed tarball)\n\n" +
+			"Extracts the archive into the current directory.\n\n" +
+			"# List archive contents\n" +
 			"tar -tzf archive.tar.gz\n" +
-			"(Lists contents without extracting)"
+			"Lists files in the archive without extracting them."
 	}
 
 	return fmt.Sprintf(
@@ -950,21 +954,63 @@ func parseResponse(text string) *Response {
 }
 
 func displayResponse(response *Response) {
-	// Color setup
 	green := color.New(color.FgGreen, color.Bold)
 	white := color.New(color.FgHiWhite)
+	cyan := color.New(color.FgCyan, color.Bold)
+
+	// Examples mode renders as blocks of "# title / command / explanation",
+	// separated by blank lines. Detect by the presence of a "# " title line
+	// and render with preserved blank lines.
+	if looksLikeExamples(response.FullText) {
+		renderExamples(response.FullText, cyan, green, white)
+		return
+	}
 
 	if response.Command != "" {
-		// Display command in green
 		green.Println(response.Command)
-
-		// Display explanation in white if present
 		if response.Explanation != "" {
 			white.Println(response.Explanation)
 		}
 	} else {
-		// If we couldn't parse it, just show the full response
 		fmt.Println(response.FullText)
+	}
+}
+
+func looksLikeExamples(text string) bool {
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "# ") {
+			return true
+		}
+	}
+	return false
+}
+
+// renderExamples prints examples-mode output preserving blank-line separators
+// between blocks. Within each block: "# title" → cyan, first non-title line →
+// green (the command), remaining lines → white (the explanation).
+func renderExamples(text string, titleColor, cmdColor, explColor *color.Color) {
+	blocks := strings.Split(strings.TrimSpace(text), "\n\n")
+	for i, block := range blocks {
+		lines := strings.Split(block, "\n")
+		sawCmd := false
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				continue
+			}
+			switch {
+			case strings.HasPrefix(trimmed, "# "):
+				titleColor.Println(trimmed)
+			case !sawCmd:
+				cmdColor.Println(trimmed)
+				sawCmd = true
+			default:
+				explColor.Println(trimmed)
+			}
+		}
+		if i < len(blocks)-1 {
+			fmt.Println()
+		}
 	}
 }
 
