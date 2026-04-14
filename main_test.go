@@ -62,7 +62,7 @@ func TestParseResponse(t *testing.T) {
 	}
 }
 
-// Test parseResponse handles examples-mode output: multiple "# title" blocks.
+// Test parseResponse handles examples-mode output: one or more "# title" blocks.
 // Command/Explanation must be empty so copy/execute/safety don't act on a title.
 func TestParseResponseExamples(t *testing.T) {
 	input := "# List running containers\n" +
@@ -455,7 +455,11 @@ func BenchmarkIsDangerous(b *testing.B) {
 // a real API.
 type blockingMockProvider struct{}
 
-func (m *blockingMockProvider) Query(ctx context.Context, query, platform string, examples bool) (string, error) {
+// Compile-time assertion: blockingMockProvider must satisfy the Provider
+// interface so this test actually tracks the real contract.
+var _ Provider = (*blockingMockProvider)(nil)
+
+func (m *blockingMockProvider) Query(ctx context.Context, systemPrompt, userQuery string) (string, error) {
 	<-ctx.Done()
 	return "", ctx.Err()
 }
@@ -473,7 +477,7 @@ func TestProviderRespectsContextCancellation(t *testing.T) {
 
 	mock := &blockingMockProvider{}
 
-	_, err := mock.Query(ctx, "test", "darwin", false)
+	_, err := mock.Query(ctx, "system prompt", "test query")
 	if err == nil {
 		t.Fatal("expected context error, got nil")
 	}

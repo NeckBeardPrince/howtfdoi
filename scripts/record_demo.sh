@@ -27,6 +27,8 @@ fi
 TAPE_DIR="$(dirname "$TAPE_FILE")"
 OUTPUT_PATH="$(awk '/^[[:space:]]*Output[[:space:]]+/ {
 	sub(/^[[:space:]]*Output[[:space:]]+/, "", $0)
+	sub(/[[:space:]]+#.*$/, "", $0)
+	sub(/[[:space:]]+$/, "", $0)
 	gsub(/^"|"$/, "", $0)
 	print
 	exit

@@ -25,7 +25,7 @@ Fixes from the v1.0.15 Copilot review ([PR #70][pr70]).
 
 ### Added
 
-- **Examples-mode test coverage**: New `TestParseResponseExamples` and `TestHandleResponseExamplesSkipsCommandActions` tests lock in the parse-kind invariant so a future refactor can't silently regress `-e` behavior.
+- **Examples-mode test coverage**: New `TestParseResponseExamples` and `TestParseResponseExamplesLeavesCommandEmpty` tests lock in the parse-kind invariant so a future refactor can't silently regress `-e` behavior.
 
 [pr70]: https://github.com/NeckBeardPrince/howtfdoi/pull/70
 
