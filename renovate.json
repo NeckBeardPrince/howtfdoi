@@ -33,7 +33,7 @@
   "commitMessageExtra": "({{currentVersion}} → {{newVersion}})",
   // "prTitle": "⬆️ {{commitMessageTopic}}{{{commitMessageExtra}}}",
   // Include changelogs in PRs for better context
-  "fetchReleaseNotes": true,
+  "fetchChangeLogs": "pr",
 
   // === DEPENDENCY DASHBOARD ===
   // Get a nice overview issue with all pending updates
