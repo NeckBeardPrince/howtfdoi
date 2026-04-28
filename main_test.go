@@ -488,6 +488,83 @@ func TestProviderRespectsContextCancellation(t *testing.T) {
 	}
 }
 
+// TestRunQueryTimeout verifies that runQueryWithProvider returns a friendly error
+// message when the provider call exceeds config.RequestTimeout.
+func TestRunQueryTimeout(t *testing.T) {
+	tempDir := t.TempDir()
+
+	config := Config{
+		RequestTimeout: 5 * time.Millisecond,
+		Platform:       "linux",
+		HistoryFile:    filepath.Join(tempDir, "history.log"),
+	}
+
+	_, err := runQueryWithProvider(config, &blockingMockProvider{}, "list files", false)
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("expected friendly timeout message, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "HOWTFDOI_REQUEST_TIMEOUT") {
+		t.Errorf("expected HOWTFDOI_REQUEST_TIMEOUT hint in error, got: %v", err)
+	}
+}
+
+// TestRunQueryNoTimeoutWhenNegative verifies that a negative RequestTimeout
+// disables the deadline, allowing the provider to run without a hard limit.
+func TestRunQueryNoTimeoutWhenNegative(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Use a provider that immediately returns (not blocking), just to confirm
+	// runQueryWithProvider succeeds when RequestTimeout < 0.
+	immediate := &immediateProvider{response: "echo hello\nPrints hello"}
+	config := Config{
+		RequestTimeout: -1,
+		Platform:       "linux",
+		HistoryFile:    filepath.Join(tempDir, "history.log"),
+	}
+
+	resp, err := runQueryWithProvider(config, immediate, "print hello", false)
+	if err != nil {
+		t.Fatalf("unexpected error with negative timeout: %v", err)
+	}
+	if resp.Command != "echo hello" {
+		t.Errorf("expected command 'echo hello', got %q", resp.Command)
+	}
+}
+
+// immediateProvider returns a fixed response without blocking.
+type immediateProvider struct{ response string }
+
+func (p *immediateProvider) Query(_ context.Context, _, _ string) (string, error) {
+	return p.response, nil
+}
+
+// TestResolveRequestTimeout verifies timeout resolution priority and parsing.
+func TestResolveRequestTimeout(t *testing.T) {
+	tests := []struct {
+		name    string
+		envVal  string
+		fileVal string
+		want    time.Duration
+	}{
+		{"env takes precedence", "30s", "2m", 30 * time.Second},
+		{"file used when env empty", "", "2m", 2 * time.Minute},
+		{"default when both empty", "", "", defaultRequestTimeout},
+		{"negative env (no timeout)", "-1s", "", -1 * time.Second},
+		{"invalid env falls back to default", "notaduration", "", defaultRequestTimeout},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveRequestTimeout(tt.envVal, tt.fileVal)
+			if got != tt.want {
+				t.Errorf("resolveRequestTimeout(%q, %q) = %v, want %v", tt.envVal, tt.fileVal, got, tt.want)
+			}
+		})
+	}
+}
+
 // Benchmark stripMarkdown function
 func BenchmarkStripMarkdown(b *testing.B) {
 	input := "```bash\nls -la\n```\nThis is a command with **bold** and `code`"
