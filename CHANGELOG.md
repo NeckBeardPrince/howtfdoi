@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.17] - 2026-04-28
+
+Configurable request timeout for provider calls ([PR #83][pr83]).
+
+### Added
+
+- **Request timeout**: Provider API calls now have a configurable timeout (default 60s) so a stuck upstream no longer hangs the CLI indefinitely. Configurable via `HOWTFDOI_REQUEST_TIMEOUT` env var or `request_timeout` config field (Go duration strings like `"30s"`, `"2m"`). Set to a negative value to disable the timeout for slow local models.
+- **Friendly timeout error**: On deadline expiry, the CLI shows a human-readable message with a hint to adjust `HOWTFDOI_REQUEST_TIMEOUT` instead of a raw `context.DeadlineExceeded`.
+- **Timeout test coverage**: New tests for `runQueryWithProvider` timeout behavior, negative-timeout bypass, and `resolveRequestTimeout` priority/parsing logic.
+
+### Changed
+
+- **`runQuery` refactored**: Provider creation and query execution split into `runQuery` / `runQueryWithProvider` so tests can inject mock providers without hitting a real API.
+
+[pr83]: https://github.com/NeckBeardPrince/howtfdoi/pull/83
+
 ## [1.0.16] - 2026-04-14
 
 Fixes from the v1.0.15 Copilot review ([PR #70][pr70]).
@@ -276,6 +292,7 @@ Fixes from the v1.0.15 Copilot review ([PR #70][pr70]).
 - Confirmation prompts before command execution
 - API key validation on startup
 
+[1.0.17]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.15...v1.0.16
 [1.0.15]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.14...v1.0.15
 [1.0.14]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.10...v1.0.14

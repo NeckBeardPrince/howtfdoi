@@ -65,6 +65,9 @@ const (
 	// Ollama defaults
 	defaultOllamaBaseURL = "http://localhost:11434/v1"
 	defaultOllamaModel   = "llama3.2"
+
+	// Default timeout for provider API calls (0 = use this default, <0 = no timeout)
+	defaultRequestTimeout = 60 * time.Second
 )
 
 var (
@@ -107,6 +110,7 @@ type FileConfig struct {
 	LMStudioModel   string `yaml:"lmstudio_model,omitempty"`
 	OllamaBaseURL   string `yaml:"ollama_base_url,omitempty"`
 	OllamaModel     string `yaml:"ollama_model,omitempty"`
+	RequestTimeout  string `yaml:"request_timeout,omitempty"` // Go duration string, e.g. "30s", "2m"
 }
 
 // Config holds runtime configuration
@@ -120,6 +124,7 @@ type Config struct {
 	LMStudioModel   string
 	OllamaBaseURL   string
 	OllamaModel     string
+	RequestTimeout  time.Duration // 0 = use defaultRequestTimeout, <0 = no timeout
 }
 
 // Response holds the parsed response.
@@ -413,12 +418,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\nENVIRONMENT VARIABLES:\n")
 		fmt.Fprintf(os.Stderr, "  ANTHROPIC_API_KEY     Your Anthropic API key (get it at console.anthropic.com)\n")
 		fmt.Fprintf(os.Stderr, "  OPENAI_API_KEY        Your OpenAI API key (get it at platform.openai.com)\n")
-		fmt.Fprintf(os.Stderr, "  HOWTFDOI_AI_PROVIDER  Override provider choice: anthropic, openai, chatgpt, or lmstudio\n")
-		fmt.Fprintf(os.Stderr, "                        (defaults to anthropic, or auto-detects from available keys)\n")
-		fmt.Fprintf(os.Stderr, "  LMSTUDIO_BASE_URL     LM Studio server URL (default: %s)\n", defaultLMStudioBaseURL)
-		fmt.Fprintf(os.Stderr, "  LMSTUDIO_MODEL        LM Studio model name (default: %s)\n", defaultLMStudioModel)
-		fmt.Fprintf(os.Stderr, "  XDG_CONFIG_HOME       Override config directory (default: ~/.config)\n")
-		fmt.Fprintf(os.Stderr, "  XDG_STATE_HOME        Override state directory (default: ~/.local/state)\n")
+		fmt.Fprintf(os.Stderr, "  HOWTFDOI_AI_PROVIDER      Override provider choice: anthropic, openai, chatgpt, or lmstudio\n")
+		fmt.Fprintf(os.Stderr, "                            (defaults to anthropic, or auto-detects from available keys)\n")
+		fmt.Fprintf(os.Stderr, "  HOWTFDOI_REQUEST_TIMEOUT  Request timeout as a Go duration (e.g. 30s, 2m). Default: %v.\n", defaultRequestTimeout)
+		fmt.Fprintf(os.Stderr, "                            Set to a negative value (e.g. -1s) to disable the timeout.\n")
+		fmt.Fprintf(os.Stderr, "  LMSTUDIO_BASE_URL         LM Studio server URL (default: %s)\n", defaultLMStudioBaseURL)
+		fmt.Fprintf(os.Stderr, "  LMSTUDIO_MODEL            LM Studio model name (default: %s)\n", defaultLMStudioModel)
+		fmt.Fprintf(os.Stderr, "  XDG_CONFIG_HOME           Override config directory (default: ~/.config)\n")
+		fmt.Fprintf(os.Stderr, "  XDG_STATE_HOME            Override state directory (default: ~/.local/state)\n")
 
 		fmt.Fprintf(os.Stderr, "\nEXAMPLES:\n")
 		fmt.Fprintf(os.Stderr, "  howtfdoi list files\n")
@@ -525,6 +532,23 @@ func resolveOllamaConfig(fileConfig FileConfig) (baseURL, model string) {
 		model = defaultOllamaModel
 	}
 	return
+}
+
+// resolveRequestTimeout parses a request timeout from envVal (env var) or fileVal
+// (config file string). Returns defaultRequestTimeout when neither is set or valid.
+// A negative duration disables the timeout; zero means use the default.
+func resolveRequestTimeout(envVal, fileVal string) time.Duration {
+	if envVal != "" {
+		if d, err := time.ParseDuration(envVal); err == nil {
+			return d
+		}
+		color.Yellow("Warning: Invalid HOWTFDOI_REQUEST_TIMEOUT value %q, using default (%v)", envVal, defaultRequestTimeout)
+	} else if fileVal != "" {
+		if d, err := time.ParseDuration(fileVal); err == nil {
+			return d
+		}
+	}
+	return defaultRequestTimeout
 }
 
 func setupConfig(verbose bool) Config {
@@ -661,6 +685,7 @@ func setupConfig(verbose bool) Config {
 		LMStudioModel:   lmStudioModel,
 		OllamaBaseURL:   ollamaBaseURL,
 		OllamaModel:     ollamaModel,
+		RequestTimeout:  resolveRequestTimeout(os.Getenv("HOWTFDOI_REQUEST_TIMEOUT"), fileConfig.RequestTimeout),
 	}
 }
 
@@ -849,39 +874,55 @@ func runFirstTimeSetup() (FileConfig, error) {
 	return fc, nil
 }
 
-func runQuery(config Config, query string, showExamples bool) (*Response, error) {
-	// Create the appropriate provider
-	var provider Provider
-	switch config.Provider {
-	case providerOpenAI:
-		provider = NewOpenAIProvider(config.APIKey)
-	case providerAnthropic:
-		provider = NewAnthropicProvider(config.APIKey)
-	case providerLMStudio:
-		provider = NewLMStudioProvider(config.LMStudioBaseURL, config.LMStudioModel)
-	case providerOllama:
-		provider = NewOllamaProvider(config.OllamaBaseURL, config.OllamaModel)
-	default:
-		return nil, fmt.Errorf("unsupported provider: %s", config.Provider)
-	}
-
-	// Build system prompt with platform info
+// runQueryWithProvider sends the query to p using the timeout from config.
+// Extracted so tests can inject a mock provider without hitting a real API.
+func runQueryWithProvider(config Config, p Provider, query string, showExamples bool) (*Response, error) {
 	systemPrompt := buildSystemPrompt(config.Platform, showExamples)
 
-	// Build user query
 	userQuery := query
 	if !showExamples {
 		userQuery = fmt.Sprintf("Platform: %s\nQuery: %s", config.Platform, query)
 	}
 
-	// Query the provider
-	fullResponse, err := provider.Query(context.Background(), systemPrompt, userQuery)
+	ctx := context.Background()
+	cancel := context.CancelFunc(func() {})
+	var appliedTimeout time.Duration
+
+	if config.RequestTimeout >= 0 {
+		appliedTimeout = config.RequestTimeout
+		if appliedTimeout == 0 {
+			appliedTimeout = defaultRequestTimeout
+		}
+		ctx, cancel = context.WithTimeout(context.Background(), appliedTimeout)
+	}
+	defer func() { cancel() }()
+
+	fullResponse, err := p.Query(ctx, systemPrompt, userQuery)
 	if err != nil {
+		if appliedTimeout > 0 && errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("request timed out after %v. If you're on a slow local model, set HOWTFDOI_REQUEST_TIMEOUT to a larger value.", appliedTimeout)
+		}
 		return nil, err
 	}
 
-	// Parse the response
 	return parseResponse(fullResponse), nil
+}
+
+func runQuery(config Config, query string, showExamples bool) (*Response, error) {
+	var p Provider
+	switch config.Provider {
+	case providerOpenAI:
+		p = NewOpenAIProvider(config.APIKey)
+	case providerAnthropic:
+		p = NewAnthropicProvider(config.APIKey)
+	case providerLMStudio:
+		p = NewLMStudioProvider(config.LMStudioBaseURL, config.LMStudioModel)
+	case providerOllama:
+		p = NewOllamaProvider(config.OllamaBaseURL, config.OllamaModel)
+	default:
+		return nil, fmt.Errorf("unsupported provider: %s", config.Provider)
+	}
+	return runQueryWithProvider(config, p, query, showExamples)
 }
 
 func buildSystemPrompt(platform string, showExamples bool) string {
