@@ -9,7 +9,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.38.0
 	github.com/atotto/clipboard v0.1.4
 	github.com/fatih/color v1.19.0
-	github.com/mattn/go-isatty v0.0.21
+	github.com/mattn/go-isatty v0.0.22
 	github.com/sashabaranov/go-openai v1.41.2
 	gopkg.in/yaml.v3 v3.0.1
 )
