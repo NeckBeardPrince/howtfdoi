@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Security hardening from a Fable model security review.
+## [1.0.18] - 2026-06-09
+
+Security hardening from a Fable model security review ([PR #104][pr104]).
 
 ### Security
 
@@ -24,6 +26,8 @@ Security hardening from a Fable model security review.
 ### Dependencies
 
 - Added `golang.org/x/term` for no-echo API key entry
+
+[pr104]: https://github.com/NeckBeardPrince/howtfdoi/pull/104
 
 ## [1.0.17] - 2026-04-28
 
@@ -310,6 +314,7 @@ Fixes from the v1.0.15 Copilot review ([PR #70][pr70]).
 - Confirmation prompts before command execution
 - API key validation on startup
 
+[1.0.18]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.17...v1.0.18
 [1.0.17]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.15...v1.0.16
 [1.0.15]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.14...v1.0.15
