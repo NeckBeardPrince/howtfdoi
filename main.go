@@ -27,6 +27,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/mattn/go-isatty"
 	openai "github.com/sashabaranov/go-openai"
+	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 )
 
@@ -89,15 +90,23 @@ func init() {
 }
 
 var (
-	// Dangerous command patterns (compiled once at startup)
+	// Dangerous command patterns (compiled once at startup).
+	// Best-effort warning, not a security boundary — the confirmation
+	// prompt in executeCommand is the real gate.
 	dangerousPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`rm\s+-rf\s+/`),
-		regexp.MustCompile(`rm\s+-rf\s+\*`),
+		// rm with combined recursive+force flags (either order, extra flags
+		// allowed) targeting root, a wildcard, or the bare home directory
+		regexp.MustCompile(`rm\s+-(rf|fr)\w*\s+(/|\*|~(\s|$))`),
 		regexp.MustCompile(`dd\s+.*of=/dev/`),
 		regexp.MustCompile(`mkfs\.`),
-		regexp.MustCompile(`:(){ :|:& };:`),
+		// Fork bomb, tolerant of whitespace variants
+		regexp.MustCompile(`:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:`),
 		regexp.MustCompile(`>\s*/dev/sd`),
 		regexp.MustCompile(`mv\s+.*\s+/dev/null`),
+		// Piping anything into a shell (curl | sh installers etc.)
+		regexp.MustCompile(`\|\s*(sudo\s+)?(ba|z|fi)?sh(\s|$)`),
+		// World-writable root
+		regexp.MustCompile(`chmod\s+(-\w+\s+)*777\s+/(\s|$)`),
 	}
 )
 
@@ -556,7 +565,7 @@ func setupConfig(verbose bool) Config {
 	configDir := getConfigDirectory()
 
 	// Ensure both directories exist on first run
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		color.Red("Error: Could not create data directory at %s: %v", dataDir, err)
 		os.Exit(1)
 	}
@@ -771,6 +780,27 @@ func saveConfigFile(fc FileConfig) error {
 	return nil
 }
 
+// readSecret reads a secret (API key) from stdin without echoing it to the
+// terminal, keeping it out of scrollback and session recordings. Falls back
+// to plain line reading when stdin is not a terminal (piped input, tests).
+func readSecret(reader *bufio.Reader) (string, error) {
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		secret, err := term.ReadPassword(fd)
+		fmt.Println() // ReadPassword swallows the user's newline
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(secret)), nil
+	}
+
+	line, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	return strings.TrimSpace(line), nil
+}
+
 // runFirstTimeSetup interactively prompts the user to configure their API key and provider.
 func runFirstTimeSetup() (FileConfig, error) {
 	reader := bufio.NewReader(os.Stdin)
@@ -806,9 +836,12 @@ func runFirstTimeSetup() (FileConfig, error) {
 	switch fc.Provider {
 	case providerOpenAI:
 		fmt.Println("\nGet your API key at: https://platform.openai.com/api-keys")
-		fmt.Print("Enter your OpenAI API key: ")
-		key, _ := reader.ReadString('\n')
-		fc.OpenAIKey = strings.TrimSpace(key)
+		fmt.Print("Enter your OpenAI API key (input hidden): ")
+		key, err := readSecret(reader)
+		if err != nil {
+			return fc, fmt.Errorf("could not read API key: %w", err)
+		}
+		fc.OpenAIKey = key
 		if fc.OpenAIKey == "" {
 			return fc, fmt.Errorf("no API key provided")
 		}
@@ -852,9 +885,12 @@ func runFirstTimeSetup() (FileConfig, error) {
 		fc.OllamaModel = model
 	default:
 		fmt.Println("\nGet your API key at: https://console.anthropic.com/settings/keys")
-		fmt.Print("Enter your Anthropic API key: ")
-		key, _ := reader.ReadString('\n')
-		fc.AnthropicKey = strings.TrimSpace(key)
+		fmt.Print("Enter your Anthropic API key (input hidden): ")
+		key, err := readSecret(reader)
+		if err != nil {
+			return fc, fmt.Errorf("could not read API key: %w", err)
+		}
+		fc.AnthropicKey = key
 		if fc.AnthropicKey == "" {
 			return fc, fmt.Errorf("no API key provided")
 		}
@@ -1157,7 +1193,7 @@ func isDangerous(command string) bool {
 // saveToHistory appends a query and response to the history file.
 // Logs warnings in verbose mode if saving fails.
 func saveToHistory(config Config, query, response string) {
-	f, err := os.OpenFile(config.HistoryFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(config.HistoryFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		if config.Verbose {
 			color.Yellow("Warning: Could not open history file: %v", err)
@@ -1165,6 +1201,12 @@ func saveToHistory(config Config, query, response string) {
 		return
 	}
 	defer f.Close()
+
+	// Queries can contain sensitive context; tighten files created
+	// world-readable by older versions (OpenFile only sets the mode on create)
+	if err := f.Chmod(0600); err != nil && config.Verbose {
+		color.Yellow("Warning: Could not set history file permissions: %v", err)
+	}
 
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	entry := fmt.Sprintf("[%s] %s\n%s\n---\n", timestamp, query, response)
@@ -1249,17 +1291,18 @@ type queryResultMsg struct {
 
 // tuiModel is the Bubbletea application model
 type tuiModel struct {
-	config    Config
-	state     tuiState
-	textarea  textarea.Model
-	viewport  viewport.Model
-	spinner   spinner.Model
-	history   []string // rendered response history
-	width     int
-	height    int
-	lastQuery string
-	lastOpts  ResponseOptions
-	err       error
+	config       Config
+	state        tuiState
+	textarea     textarea.Model
+	viewport     viewport.Model
+	spinner      spinner.Model
+	history      []string // rendered response history
+	width        int
+	height       int
+	lastQuery    string
+	lastOpts     ResponseOptions
+	lastResponse *Response
+	err          error
 
 	// styles
 	stylePrompt   lipgloss.Style
@@ -1344,6 +1387,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			m.lastQuery = query
 			m.lastOpts = opts
+			m.lastResponse = nil
 			m.state = tuiStateLoading
 			m.textarea.Reset()
 			cmds = append(cmds, asyncQuery(m.config, query, opts, showExamples), m.spinner.Tick)
@@ -1361,9 +1405,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = tuiStateResponse
 		if msg.err != nil {
 			m.err = msg.err
+			m.lastResponse = nil // never execute a stale command from an earlier query
 			entry := m.styleError.Render("Error: " + msg.err.Error())
 			m.history = append(m.history, m.stylePrompt.Render("howtfdoi> ")+m.styleHint.Render(msg.query), entry)
 		} else {
+			// Store the response the user is shown so the post-TUI execute
+			// path runs exactly this command (never a re-queried variant)
+			m.lastResponse = msg.response
+
 			// Save to history file
 			saveToHistory(m.config, msg.query, msg.response.FullText)
 
@@ -1468,14 +1517,16 @@ func runInteractiveMode(config Config) {
 		os.Exit(1)
 	}
 
-	// Handle execute after TUI exits (if -x was used on last query)
+	// Handle execute after TUI exits (if -x was used on last query).
+	// Execute the stored response the user saw and approved in the TUI —
+	// never re-query, since the AI could return a different command.
 	if fm, ok := finalModel.(tuiModel); ok {
-		if fm.lastOpts.Execute && fm.state == tuiStateInput {
-			// Re-run the last query to get response and execute
-			resp, err := runQuery(config, fm.lastQuery, false)
-			if err == nil && resp.Command != "" {
-				executeCommand(resp.Command)
+		if fm.lastOpts.Execute && fm.lastResponse != nil && fm.lastResponse.Command != "" {
+			if isDangerous(fm.lastResponse.Command) {
+				color.Yellow("\n⚠️  WARNING: This command may be dangerous!")
+				color.Yellow("Please review carefully before executing.")
 			}
+			executeCommand(fm.lastResponse.Command)
 		}
 	}
 
