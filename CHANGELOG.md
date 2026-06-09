@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.18] - 2026-06-09
+
+Security hardening from a Fable model security review ([PR #104][pr104]).
+
+### Security
+
+- **TUI `-x` executes the command you actually saw**: The interactive mode execute path previously *re-queried* the AI after the TUI exited, so the executed command could differ from the one displayed and approved (and it skipped the dangerous-command warning entirely). The TUI now stores the displayed response and executes exactly that command, with the `isDangerous()` warning applied. Failed queries clear the stored response so a stale command from an earlier query can never run on exit.
+- **Fork-bomb pattern actually matches fork bombs**: The pattern contained unescaped regex metacharacters (`|` parsed as alternation, `()` as an empty group), so whitespace variants like `:(){:|:&};:` slipped through. Now escaped and whitespace-tolerant.
+- **Broader dangerous-command detection**: New patterns catch `rm -fr /` (flag order), `rm -rf ~` (bare home), pipe-to-shell installers (`curl ... | sh`, `| sudo bash`), and `chmod -R 777 /`. Safe commands like `rm -rf ./build` and `rm -rf ~/old-project` are not flagged. The pattern list is documented as best-effort — the confirmation prompt remains the real gate.
+- **History file no longer world-readable**: `history.log` is now created with `0600` permissions (was `0644`) and the state directory with `0700`, matching the config-file treatment. Legacy history files are tightened to `0600` on the next write, since queries and responses can contain sensitive context.
+- **API keys no longer echo during first-run setup**: Key prompts use no-echo terminal input (`golang.org/x/term.ReadPassword`), keeping keys out of terminal scrollback and session recordings. Piped/non-terminal input falls back to plain line reading.
+
+### Added
+
+- **Security test coverage**: New tests lock in the expanded dangerous patterns, history file/directory permissions (including the legacy-permission migration), the TUI stored-response execute invariant, and `readSecret` fallback behavior.
+
+### Dependencies
+
+- Added `golang.org/x/term` for no-echo API key entry
+
+[pr104]: https://github.com/NeckBeardPrince/howtfdoi/pull/104
+
 ## [1.0.17] - 2026-04-28
 
 Configurable request timeout for provider calls ([PR #83][pr83]).
@@ -292,6 +314,7 @@ Fixes from the v1.0.15 Copilot review ([PR #70][pr70]).
 - Confirmation prompts before command execution
 - API key validation on startup
 
+[1.0.18]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.17...v1.0.18
 [1.0.17]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.15...v1.0.16
 [1.0.15]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.14...v1.0.15
