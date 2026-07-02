@@ -28,3 +28,11 @@ repos:
     rev: v8.30.0
     hooks:
       - id: gitleaks
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.52.2
+    hooks:
+      - id: golangci-lint
+  - repo: https://github.com/jumanjihouse/pre-commit-hooks
+    rev: 3.0.0
+    hooks:
+      - id: shellcheck
