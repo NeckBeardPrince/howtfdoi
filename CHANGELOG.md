@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.19] - 2026-08-19
+
+Routine dependency and CI supply-chain maintenance.
+
+### Security
+
+- **OSSF Scorecard workflow**: New `.github/workflows/scorecards.yml` runs supply-chain security analysis on push to `main`, on a weekly schedule, and on branch-protection changes, publishing results to the code-scanning dashboard ([PR #112][pr112]).
+- **CodeQL workflow permissions tightened**: `.github/workflows/codeql.yml` now declares an explicit top-level `permissions: contents: read`.
+- **Pre-commit hooks expanded**: Added `golangci-lint` and `shellcheck` pre-commit hooks alongside the existing `gitleaks` check ([PR #112][pr112]).
+- **CI actions kept current**: `step-security/harden-runner`, `actions/checkout`, `actions/setup-go`, `codecov/codecov-action`, `github/codeql-action`, `ossf/scorecard-action`, `actions/upload-artifact`, and `goreleaser/goreleaser-action` were bumped across many small Renovate PRs to their latest pinned SHAs (see Dependencies below).
+
+### Changed
+
+- **Renovate fast-tracks `step-security/harden-runner`**: New `packageRules` entry gives the CI-hardening action a 1-day release-age window, automerge, and a `security-tooling` label so it stays current with minimal delay.
+
+### Dependencies
+
+- Upgraded `github.com/anthropics/anthropic-sdk-go` v1.46.0 → v1.62.0
+- Upgraded `github.com/sashabaranov/go-openai` v1.41.2 → v1.42.0
+- Upgraded `charm.land/bubbletea/v2` v2.0.6 → v2.0.8
+- Upgraded `charm.land/bubbles/v2` v2.1.0 → v2.1.1
+- Upgraded `charm.land/lipgloss/v2` v2.0.3 → v2.0.5
+- Upgraded `github.com/mattn/go-isatty` v0.0.22 → v0.0.24
+- Upgraded CI action pins: `step-security/harden-runner` v2.19.4 → v2.21.0, `actions/checkout` v6.0.2 → v7.0.1, `actions/setup-go` v6.4.0 → v7.0.0, `codecov/codecov-action` v6.0.1 → v7.0.0, `github/codeql-action` v4.36.0 → v4.37.6, `ossf/scorecard-action` v2.4.0 → v2.4.4, `actions/upload-artifact` v4.6.2 → v7.0.1, `goreleaser/goreleaser-action` v7.2.2 → v7.2.3
+
+[pr112]: https://github.com/NeckBeardPrince/howtfdoi/pull/112
+
 ## [1.0.18] - 2026-06-09
 
 Security hardening from a Fable model security review ([PR #104][pr104]).
@@ -314,6 +341,7 @@ Fixes from the v1.0.15 Copilot review ([PR #70][pr70]).
 - Confirmation prompts before command execution
 - API key validation on startup
 
+[1.0.19]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.18...v1.0.19
 [1.0.18]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.17...v1.0.18
 [1.0.17]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.15...v1.0.16
