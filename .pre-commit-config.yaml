@@ -1,21 +1,28 @@
 repos:
-  # General file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-added-large-files
-        args: ['--maxkb=4096']
+      # Git style
       - id: check-merge-conflict
+      - id: check-vcs-permalinks
+      - id: forbid-new-submodules
+
+      # Common errors
+      - id: check-executables-have-shebangs
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+        exclude: CHANGELOG.md
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+
+        # Basic security
       - id: detect-private-key
 
-  # Go formatting
-  - repo: https://github.com/dnephin/pre-commit-golang
-    rev: v0.5.1
-    hooks:
-      - id: go-fmt
+      # Cross platform
+      - id: end-of-file-fixer
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
 
   # Commit message format (conventional commits)
   - repo: https://github.com/compilerla/conventional-pre-commit
@@ -24,15 +31,31 @@ repos:
       - id: conventional-pre-commit
         stages: [commit-msg]
 
+  # GGShield and Gitleaks for secret scanning
+  - repo: https://github.com/gitguardian/ggshield
+    rev: v1.54.0
+    hooks:
+      - id: ggshield
+        language_version: python3
+
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.0
     hooks:
       - id: gitleaks
-  - repo: https://github.com/golangci/golangci-lint
-    rev: v1.52.2
-    hooks:
-      - id: golangci-lint
+
+  # Shell formatting
   - repo: https://github.com/jumanjihouse/pre-commit-hooks
     rev: 3.0.0
     hooks:
       - id: shellcheck
+
+  # Go formatting
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.13.2
+    hooks:
+      - id: golangci-lint
