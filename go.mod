@@ -1,17 +1,17 @@
 module github.com/neckbeardprince/howtfdoi
 
-go 1.25.2
+go 1.26.0
 
 require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/lipgloss/v2 v2.0.6
-	github.com/anthropics/anthropic-sdk-go v1.71.0
+	github.com/anthropics/anthropic-sdk-go v1.72.0
 	github.com/atotto/clipboard v0.1.4
 	github.com/fatih/color v1.19.0
 	github.com/mattn/go-isatty v0.0.24
-	github.com/sashabaranov/go-openai v1.42.0
-	golang.org/x/term v0.45.0
+	github.com/sashabaranov/go-openai v1.42.1
+	golang.org/x/term v0.46.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -43,5 +43,5 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )
