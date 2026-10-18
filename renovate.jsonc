@@ -80,6 +80,17 @@
       "automerge": true
     },
 
+    // === GITHUB ACTIONS ===
+    // Group non-major action updates into one PR and auto-merge it.
+    // harden-runner is excluded so its fast-track rule above keeps its own PR.
+    {
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["!step-security/harden-runner"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "github actions",
+      "automerge": true
+    },
+
     // === LANGUAGE-SPECIFIC GROUPING ===
     // Group Go updates together and auto-merge safe ones
     {
