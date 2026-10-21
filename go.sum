@@ -88,6 +88,8 @@ github.com/anthropics/anthropic-sdk-go v1.80.0 h1:w86dgWOME3oW93UKZXFxPMwPhjHn3p
 github.com/anthropics/anthropic-sdk-go v1.80.0/go.mod h1:x+lPk/cCl48uRegeP0hlYYBN1b7bEBTveInIMgLicnY=
 github.com/anthropics/anthropic-sdk-go v1.81.0 h1:3WAxA6xMSSHKExnFN3t/qIwJUC8l6zQFTmwVGl3QWy0=
 github.com/anthropics/anthropic-sdk-go v1.81.0/go.mod h1:GThfYqPJoaQ/6pmibCI98Cr4y5su2FXMUHn3NrSSnIc=
+github.com/anthropics/anthropic-sdk-go v1.84.0 h1:mnAhggc5H5A98JYmhQELT+j4J89PYBFKnnSvUTNwNd8=
+github.com/anthropics/anthropic-sdk-go v1.84.0/go.mod h1:GThfYqPJoaQ/6pmibCI98Cr4y5su2FXMUHn3NrSSnIc=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
 github.com/atotto/clipboard v0.1.4/go.mod h1:ZY9tmq7sm5xIbd9bOK4onWV4S6X0u6GY7Vn0Yu86PYI=
 github.com/aymanbagabas/go-udiff v0.4.1 h1:OEIrQ8maEeDBXQDoGCbbTTXYJMYRCRO1fnodZ12Gv5o=
