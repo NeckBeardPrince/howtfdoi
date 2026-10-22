@@ -27,8 +27,8 @@ import (
 	"github.com/fatih/color"
 	"github.com/mattn/go-isatty"
 	openai "github.com/sashabaranov/go-openai"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/term"
-	"gopkg.in/yaml.v3"
 )
 
 const (
