@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.20] - 2026-10-21
+
+Migrates to `anthropic-sdk-go` v2 and replaces an unmaintained YAML dependency ([PR #168][pr168]).
+
+### Changed
+
+- **Anthropic SDK v2**: Imports moved to the `github.com/anthropics/anthropic-sdk-go/v2` module path. v2 turned `MessageParam` into a union type, so `AnthropicProvider.Query` now builds the user message with `anthropic.NewUserMessage(...)`. Streaming and prompt caching are unchanged.
+- **YAML library**: Replaced the unmaintained `gopkg.in/yaml.v3` with the maintained fork `go.yaml.in/yaml/v3`. This is a drop-in import change, and the configuration file format is unchanged.
+- **CI Go version**: Go bumped from 1.26.7 to 1.27.x in CI and release workflows.
+- **Renovate configuration**: Renamed `renovate.json` to `renovate.jsonc` and simplified the rules.
+- **Pre-commit**: The `golangci-lint` hook is temporarily disabled because the Homebrew bottle is built with an older Go than the standard library it checks. CI still lints.
+
+### Added
+
+- **Anthropic provider tests**: New `httptest`-based tests exercise the real `AnthropicProvider.Query` against a fake streaming endpoint, covering request shape, prompt caching, stream parsing, and API error handling. The provider was previously only covered through mocks.
+
+### Dependencies
+
+- Upgraded `github.com/anthropics/anthropic-sdk-go` v1.62.0 → `github.com/anthropics/anthropic-sdk-go/v2` v2.1.0
+- Replaced `gopkg.in/yaml.v3` v3.0.1 with `go.yaml.in/yaml/v3` v3.0.5
+- Upgraded `charm.land/bubbletea/v2` v2.0.8 → v2.1.0
+- Upgraded `charm.land/bubbles/v2` v2.1.1 → v2.2.1
+- Upgraded `charm.land/lipgloss/v2` v2.0.5 → v2.0.6
+- Upgraded `github.com/sashabaranov/go-openai` v1.42.0 → v1.43.0
+- Upgraded `golang.org/x/term` v0.45.0 → v0.47.0
+- Upgraded CI action pins: `step-security/harden-runner` v2.21.0 → v2.22.2, `github/codeql-action` v4.37.6 → v4.39.1, `codecov/codecov-action` v7.0.0 → v7.1.1, `actions/upload-artifact` v7.0.1 → v7.0.2
+
+[pr168]: https://github.com/NeckBeardPrince/howtfdoi/pull/168
+
 ## [1.0.19] - 2026-08-19
 
 Routine dependency and CI supply-chain maintenance.
@@ -341,6 +370,7 @@ Fixes from the v1.0.15 Copilot review ([PR #70][pr70]).
 - Confirmation prompts before command execution
 - API key validation on startup
 
+[1.0.20]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.19...v1.0.20
 [1.0.19]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.18...v1.0.19
 [1.0.18]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.17...v1.0.18
 [1.0.17]: https://github.com/NeckBeardPrince/howtfdoi/compare/v1.0.16...v1.0.17
