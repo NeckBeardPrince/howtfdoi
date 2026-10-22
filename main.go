@@ -21,8 +21,8 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/v2"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
 	"github.com/atotto/clipboard"
 	"github.com/fatih/color"
 	"github.com/mattn/go-isatty"
@@ -196,12 +196,7 @@ func (p *AnthropicProvider) Query(ctx context.Context, systemPrompt, userQuery s
 			},
 		},
 		Messages: []anthropic.MessageParam{
-			{
-				Role: "user",
-				Content: []anthropic.ContentBlockParamUnion{
-					anthropic.NewTextBlock(userQuery),
-				},
-			},
+			anthropic.NewUserMessage(anthropic.NewTextBlock(userQuery)),
 		},
 	})
 
