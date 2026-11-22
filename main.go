@@ -27,7 +27,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/mattn/go-isatty"
 	openai "github.com/sashabaranov/go-openai"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 	"golang.org/x/term"
 )
 

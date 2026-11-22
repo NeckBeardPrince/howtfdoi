@@ -12,7 +12,6 @@ require (
 	github.com/mattn/go-isatty v0.0.24
 	github.com/sashabaranov/go-openai v1.43.0
 	go.yaml.in/yaml/v4 v4.0.0
-	go.yaml.in/yaml/v4 v4.0.0
 	golang.org/x/term v0.48.0
 )
 
